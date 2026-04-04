@@ -580,6 +580,15 @@
     /* Empty state polish */
     .empty .icon { filter: grayscale(0.5); }
 
+    /* Checkbox in tables */
+    table input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--gold); cursor: pointer; }
+
+    /* Required field indicator */
+    .form-group label span[style] { font-size: 12px; }
+
+    /* Save button loading state */
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
 
 
     /* ══ Mobile layout overrides ══ */

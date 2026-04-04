@@ -46,3 +46,40 @@ export const CTYPE_SHORT = {
 };
 
 export const PAGE_SIZE = 20;
+
+// Delay calculation — shared by Dashboard and Cases
+export function calcDelay(c) {
+  if (c.status === 'completed' || c.status === 'cancelled') return { delayed: false, days: 0, milestone: '' };
+  const now = new Date();
+  const statusIdx = CASE_STEPS.indexOf(c.status);
+  if (c.estimated_arrival && !c.actual_arrival && statusIdx >= CASE_STEPS.indexOf('production')) {
+    const est = new Date(c.estimated_arrival);
+    if (now > est) return { delayed: true, days: Math.ceil((now - est) / 86400000), milestone: '到倉過期' };
+  }
+  if (c.order_date && !c.install_date && statusIdx >= CASE_STEPS.indexOf('deposit_paid')) {
+    const target = new Date(c.order_date);
+    target.setDate(target.getDate() + 60);
+    if (now > target) return { delayed: true, days: Math.ceil((now - target) / 86400000), milestone: '安裝過期' };
+  }
+  const thresholds = { new: 14, measure_scheduled: 14, measured: 10, official_quoted: 14, order_confirmed: 7, deposit_paid: 7, production: 45, shipped: 21, arrived: 14 };
+  const threshold = thresholds[c.status] || 30;
+  const lastUpdate = c.updated_at || c.created_at;
+  if (lastUpdate) {
+    const diff = Math.ceil((now - new Date(lastUpdate)) / 86400000);
+    if (diff > threshold) return { delayed: true, days: diff - threshold, milestone: (CASE_STATUS_LABEL[c.status] || '') + '停滯' };
+  }
+  return { delayed: false, days: 0, milestone: '' };
+}
+
+// CSV export helper — handles escaping and BOM for Excel
+export function downloadCSV(headers, rows, filename) {
+  const csv = '\uFEFF' + [headers, ...rows].map(r =>
+    r.map(cell => `"${String(cell ?? '').replace(/"/g, '""').replace(/\n/g, ' ')}"`).join(',')
+  ).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}

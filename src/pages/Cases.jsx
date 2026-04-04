@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
-import { fmtDate, fmtPrice, CASE_STATUS_LABEL, CASE_STATUS_COLOR, CASE_STEPS, CTYPE_SHORT, DOOR_TYPE_LABEL, PAGE_SIZE } from '../api/utils';
+import { fmtDate, fmtPrice, CASE_STATUS_LABEL, CASE_STATUS_COLOR, CASE_STEPS, CTYPE_SHORT, DOOR_TYPE_LABEL, PAGE_SIZE, calcDelay, downloadCSV } from '../api/utils';
 import { useToast } from '../components/UI/Toast';
 import { useConfirm } from '../components/UI/Confirm';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,12 +18,15 @@ export default function Cases() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [stats, setStats] = useState({});
   const [modal, setModal] = useState({ open: false, data: null });
   const [tab, setTab] = useState('customer');
   const [form, setForm] = useState({});
   const [productions, setProductions] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [batchStatus, setBatchStatus] = useState('');
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -35,16 +38,21 @@ export default function Cases() {
     if (statusFilter) path += `&status=eq.${statusFilter}`;
     try {
       setTotal(await proxyCount(path.replace('select=*', 'select=id')));
-      setRows(await sbFetch(path + `&offset=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`) || []);
+      const data = await sbFetch(path + `&offset=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`) || [];
+      setRows(data);
+      // Calculate delayed count from active cases
+      const activeCases = await sbFetch('cases?select=*&status=not.in.(completed,cancelled)&limit=500') || [];
+      const delayedCount = activeCases.filter(c => calcDelay(c).delayed).length;
       setStats({
         total: await proxyCount('cases?select=id'),
         active: await proxyCount('cases?select=id&status=in.(new,measure_scheduled,measured,official_quoted,order_confirmed,deposit_paid,production,shipped,arrived,installed)'),
-        delayed: 0,
+        delayed: delayedCount,
         completed: await proxyCount('cases?select=id&status=eq.completed'),
         month: await proxyCount(`cases?select=id&created_at=gte.${new Date().toISOString().slice(0, 7)}-01`),
       });
     } catch (e) { toast(e.message, 'error'); }
     setLoading(false);
+    setSelected(new Set());
   }, [search, statusFilter, page, toast]);
 
   useEffect(() => { load(); }, [load]);
@@ -58,11 +66,15 @@ export default function Cases() {
   }
 
   async function saveTab(fields) {
-    fields.updated_at = new Date().toISOString();
-    await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(fields) });
-    toast('已儲存', 'success');
-    setForm(f => ({ ...f, ...fields }));
-    load();
+    setSaving(true);
+    try {
+      fields.updated_at = new Date().toISOString();
+      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(fields) });
+      toast('已儲存', 'success');
+      setForm(f => ({ ...f, ...fields }));
+      load();
+    } catch (e) { toast('儲存失敗: ' + e.message, 'error'); }
+    setSaving(false);
   }
 
   async function createNew() {
@@ -82,23 +94,77 @@ export default function Cases() {
     });
   }
 
+  // Batch status update
+  async function batchUpdateStatus() {
+    if (!batchStatus || selected.size === 0) return;
+    confirm('批次更新', `確定將 ${selected.size} 筆案件狀態更新為「${CASE_STATUS_LABEL[batchStatus] || batchStatus}」？`, async () => {
+      try {
+        const ids = [...selected];
+        for (const id of ids) {
+          await sbFetch(`cases?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ status: batchStatus, updated_at: new Date().toISOString() }) });
+        }
+        toast(`已更新 ${ids.length} 筆案件`, 'success');
+        setSelected(new Set());
+        setBatchStatus('');
+        load();
+      } catch (e) { toast('批次更新失敗: ' + e.message, 'error'); }
+    });
+  }
+
+  function toggleSelect(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    if (selected.size === rows.length) setSelected(new Set());
+    else setSelected(new Set(rows.map(r => r.id)));
+  }
+
+  // CSV export
+  function exportCSV() {
+    if (!rows.length) { toast('沒有資料可匯出', 'error'); return; }
+    const headers = ['案件編號', '訂單編號', '客戶', '業務', '型態', '門型', '報價', '狀態', '建立日期'];
+    const csvRows = rows.map(c => [
+      c.case_no || '', c.order_no || '', c.customer_name || '', c.sales_person || '',
+      CTYPE_SHORT[c.customer_type] || c.customer_type || '',
+      DOOR_TYPE_LABEL[c.door_type] || c.door_type || '',
+      c.total_with_tax || c.official_price || c.quoted_price || '',
+      CASE_STATUS_LABEL[c.status] || c.status || '',
+      c.created_at ? new Date(c.created_at).toLocaleDateString('zh-TW') : ''
+    ]);
+    downloadCSV(headers, csvRows, `案件管理_${new Date().toISOString().slice(0, 10)}.csv`);
+    toast('已下載 CSV', 'success');
+  }
+
   const stepIdx = CASE_STEPS.indexOf(form.status);
   const st = CASE_STATUS_COLOR[form.status] || CASE_STATUS_COLOR.new;
   const from = page * PAGE_SIZE + 1, to = Math.min(from + PAGE_SIZE - 1, total);
 
-  const inp = (label, key, type = 'text') => (
+  const inp = (label, key, type = 'text', required = false) => (
     <div className="form-group" style={{ margin: 0 }}>
-      <label style={{ fontSize: 12 }}>{label}</label>
+      <label style={{ fontSize: 12 }}>{label}{required && <span style={{ color: 'var(--danger)', marginLeft: 2 }}>*</span>}</label>
       <input type={type} value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-        className="search-box" style={{ padding: '8px 12px', fontSize: 13, minWidth: 0 }} />
+        className="search-box" style={{ padding: '8px 12px', fontSize: 13, minWidth: 0, ...(required && !form[key] ? { borderColor: 'rgba(255,68,68,.3)' } : {}) }} />
     </div>
+  );
+
+  const saveBtn = (label, onClick) => (
+    <button className="btn btn-primary" style={{ gridColumn: '1/-1' }} disabled={saving} onClick={onClick}>
+      {saving ? '儲存中...' : label}
+    </button>
   );
 
   return (
     <div>
       <div className="page-header">
         <div className="page-title-wrap"><div className="page-title">案件管理</div><div className="page-subtitle">追蹤從丈量到發包的完整流程</div></div>
-        <button className="btn btn-primary" onClick={createNew}>+ 新增案件</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className="btn btn-ghost" onClick={exportCSV} style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}>下載 CSV</button>
+          <button className="btn btn-primary" onClick={createNew}>+ 新增案件</button>
+        </div>
       </div>
       <div className="stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)' }}>
         <StatCard label="總案件" value={stats.total} />
@@ -107,6 +173,21 @@ export default function Cases() {
         <StatCard label="已結案" value={stats.completed} color="var(--success)" />
         <StatCard label="本月" value={stats.month} />
       </div>
+
+      {/* Batch action bar */}
+      {selected.size > 0 && (
+        <div style={{ padding: '10px 16px', background: 'var(--gold-dim)', border: '1px solid rgba(236,194,70,.3)', borderRadius: 'var(--radius)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)' }}>已選 {selected.size} 筆</span>
+          <select value={batchStatus} onChange={e => setBatchStatus(e.target.value)} style={{ padding: '6px 28px 6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 12, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
+            <option value="">選擇狀態...</option>
+            {CASE_STEPS.map(s => <option key={s} value={s}>{CASE_STATUS_LABEL[s]}</option>)}
+            <option value="cancelled">已取消</option>
+          </select>
+          <button className="btn btn-primary btn-sm" disabled={!batchStatus} onClick={batchUpdateStatus}>批次更新</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>取消選取</button>
+        </div>
+      )}
+
       <div className="controls">
         <input className="search-box" placeholder="搜尋案件編號、客戶..." value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} />
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(0); }} style={{ padding: '9px 32px 9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 14, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
@@ -119,22 +200,30 @@ export default function Cases() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>訂單編號</th><th>客戶</th><th>業務</th><th>型態</th><th>報價</th><th>狀態</th><th>建立</th></tr></thead>
+          <thead><tr>
+            <th style={{ width: 36 }}><input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleSelectAll} style={{ cursor: 'pointer' }} /></th>
+            <th>訂單編號</th><th>客戶</th><th>業務</th><th>型態</th><th>報價</th><th>狀態</th><th>建立</th>
+          </tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan="7"><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
-            : rows.length === 0 ? <tr><td colSpan="7"><div className="empty"><div className="icon">📁</div>沒有案件</div></td></tr>
+            {loading ? <tr><td colSpan="8"><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
+            : rows.length === 0 ? <tr><td colSpan="8"><div className="empty"><div className="icon">📁</div>沒有案件</div></td></tr>
             : rows.map(c => {
               const cst = CASE_STATUS_COLOR[c.status] || CASE_STATUS_COLOR.new;
               const price = c.total_with_tax || c.official_price || c.quoted_price;
+              const d = calcDelay(c);
               return (
-                <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => openCase(c)}>
-                  <td><strong style={{ fontFamily: 'monospace', fontSize: 11 }}>{c.order_no || c.case_no || '—'}</strong></td>
-                  <td>{c.customer_name || '—'}</td>
-                  <td style={{ fontSize: 12 }}>{c.sales_person || '—'}</td>
-                  <td style={{ fontSize: 11 }}>{CTYPE_SHORT[c.customer_type] || c.customer_type || '—'}</td>
-                  <td className="price">{price ? fmtPrice(price) : '—'}</td>
-                  <td><span className="badge" style={{ background: cst.bg, color: cst.color }}>{CASE_STATUS_LABEL[c.status] || c.status}</span></td>
-                  <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(c.created_at)}</td>
+                <tr key={c.id} style={{ cursor: 'pointer', background: d.delayed ? 'rgba(239,68,68,.04)' : undefined }}>
+                  <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} style={{ cursor: 'pointer' }} /></td>
+                  <td onClick={() => openCase(c)}><strong style={{ fontFamily: 'monospace', fontSize: 11 }}>{c.order_no || c.case_no || '—'}</strong></td>
+                  <td onClick={() => openCase(c)}>{c.customer_name || '—'}</td>
+                  <td onClick={() => openCase(c)} style={{ fontSize: 12 }}>{c.sales_person || '—'}</td>
+                  <td onClick={() => openCase(c)} style={{ fontSize: 11 }}>{CTYPE_SHORT[c.customer_type] || c.customer_type || '—'}</td>
+                  <td onClick={() => openCase(c)} className="price">{price ? fmtPrice(price) : '—'}</td>
+                  <td onClick={() => openCase(c)}>
+                    <span className="badge" style={{ background: cst.bg, color: cst.color }}>{CASE_STATUS_LABEL[c.status] || c.status}</span>
+                    {d.delayed && <div style={{ fontSize: 9, color: 'var(--danger)', fontWeight: 700, marginTop: 2 }}>延遲{d.days}天</div>}
+                  </td>
+                  <td onClick={() => openCase(c)} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(c.created_at)}</td>
                 </tr>
               );
             })}
@@ -142,7 +231,7 @@ export default function Cases() {
         </table>
       </div>
       <div className="pagination">
-        <span>{total ? `${from}-${to} / ${total}` : ''}</span>
+        <span>{total ? `顯示 ${from}-${to}，共 ${total} 筆` : ''}</span>
         <div className="page-btns">
           <button className="page-btn" disabled={page === 0} onClick={() => setPage(p => p - 1)}>‹</button>
           <button className="page-btn" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>›</button>
@@ -174,12 +263,12 @@ export default function Cases() {
           {/* Tab content */}
           {tab === 'customer' && (
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {inp('訂單編號', 'order_no')}{inp('下單編號', 'factory_order_no')}{inp('業務', 'sales_person')}{inp('客戶名稱', 'customer_name')}
+              {inp('訂單編號', 'order_no')}{inp('下單編號', 'factory_order_no')}{inp('業務', 'sales_person')}{inp('客戶名稱', 'customer_name', 'text', true)}
               {inp('聯繫人', 'contact_person')}{inp('電話', 'customer_phone')}{inp('產品編號', 'product_code')}{inp('數量', 'quantity', 'number')}
               <div className="form-group" style={{ margin: 0 }}><label style={{ fontSize: 12 }}>客戶型態</label><select value={form.customer_type || ''} onChange={e => setForm(f => ({ ...f, customer_type: e.target.value }))} style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)', width: '100%' }}>{CTYPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
               <div className="form-group" style={{ margin: 0 }}><label style={{ fontSize: 12 }}>防火門</label><select value={String(form.is_fireproof || false)} onChange={e => setForm(f => ({ ...f, is_fireproof: e.target.value === 'true' }))} style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)', width: '100%' }}><option value="false">NO</option><option value="true">YES</option></select></div>
               <div className="form-group" style={{ margin: 0, gridColumn: '1/-1' }}><label style={{ fontSize: 12 }}>案場地址</label><input value={form.case_address || ''} onChange={e => setForm(f => ({ ...f, case_address: e.target.value }))} className="search-box" style={{ padding: '8px 12px', fontSize: 13, minWidth: 0 }} /></div>
-              <button className="btn btn-primary" style={{ gridColumn: '1/-1' }} onClick={() => saveTab({ order_no: form.order_no, factory_order_no: form.factory_order_no, sales_person: form.sales_person, customer_name: form.customer_name, contact_person: form.contact_person, customer_phone: form.customer_phone, product_code: form.product_code, quantity: Number(form.quantity) || 1, customer_type: form.customer_type, is_fireproof: form.is_fireproof, case_address: form.case_address })}>儲存客戶資訊</button>
+              {saveBtn('儲存客戶資訊', () => saveTab({ order_no: form.order_no, factory_order_no: form.factory_order_no, sales_person: form.sales_person, customer_name: form.customer_name, contact_person: form.contact_person, customer_phone: form.customer_phone, product_code: form.product_code, quantity: Number(form.quantity) || 1, customer_type: form.customer_type, is_fireproof: form.is_fireproof, case_address: form.case_address }))}
             </div>
           )}
           {tab === 'measure' && (
@@ -188,7 +277,7 @@ export default function Cases() {
               {inp('正式報價', 'official_price', 'number')}
               <div className="form-group" style={{ margin: 0 }}><label style={{ fontSize: 12 }}>原始報價</label><div style={{ padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 'var(--radius)', fontSize: 14, color: 'var(--text-muted)' }}>{fmtPrice(form.quoted_price)}</div></div>
               <div className="form-group" style={{ margin: 0, gridColumn: '1/-1' }}><label style={{ fontSize: 12 }}>報價備註</label><textarea value={form.official_note || ''} onChange={e => setForm(f => ({ ...f, official_note: e.target.value }))} className="search-box" style={{ padding: '8px 12px', fontSize: 13, minHeight: 60, resize: 'vertical', minWidth: 0 }} /></div>
-              <button className="btn btn-primary" style={{ gridColumn: '1/-1' }} onClick={() => saveTab({ measure_date: form.measure_date || null, measure_staff: form.measure_staff, actual_width_cm: Number(form.actual_width_cm) || null, actual_height_cm: Number(form.actual_height_cm) || null, official_price: Number(form.official_price) || null, official_note: form.official_note })}>儲存丈量/報價</button>
+              {saveBtn('儲存丈量/報價', () => saveTab({ measure_date: form.measure_date || null, measure_staff: form.measure_staff, actual_width_cm: Number(form.actual_width_cm) || null, actual_height_cm: Number(form.actual_height_cm) || null, official_price: Number(form.official_price) || null, official_note: form.official_note }))}
             </div>
           )}
           {tab === 'finance' && (
@@ -198,7 +287,7 @@ export default function Cases() {
               {inp('尾款', 'balance', 'number')}{inp('尾款付訖日', 'balance_paid_at', 'date')}
               {inp('總價(含稅)', 'total_with_tax', 'number')}{inp('付清日', 'paid_complete_at', 'date')}
               <div className="form-group" style={{ margin: 0, gridColumn: '1/-1' }}><label style={{ fontSize: 12 }}>發票號碼</label><input value={form.invoice_no || ''} onChange={e => setForm(f => ({ ...f, invoice_no: e.target.value }))} className="search-box" style={{ padding: '8px 12px', fontSize: 13, minWidth: 0 }} /></div>
-              <button className="btn btn-primary" style={{ gridColumn: '1/-1' }} onClick={() => saveTab({ measure_fee: Number(form.measure_fee) || 0, measure_fee_paid_at: form.measure_fee_paid_at || null, deposit_50: Number(form.deposit_50) || null, deposit_50_paid_at: form.deposit_50_paid_at || null, balance: Number(form.balance) || null, balance_paid_at: form.balance_paid_at || null, total_with_tax: Number(form.total_with_tax) || null, paid_complete_at: form.paid_complete_at || null, invoice_no: form.invoice_no || null })}>儲存財務</button>
+              {saveBtn('儲存財務', () => saveTab({ measure_fee: Number(form.measure_fee) || 0, measure_fee_paid_at: form.measure_fee_paid_at || null, deposit_50: Number(form.deposit_50) || null, deposit_50_paid_at: form.deposit_50_paid_at || null, balance: Number(form.balance) || null, balance_paid_at: form.balance_paid_at || null, total_with_tax: Number(form.total_with_tax) || null, paid_complete_at: form.paid_complete_at || null, invoice_no: form.invoice_no || null }))}
               {payments.length > 0 && <div style={{ gridColumn: '1/-1', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', marginBottom: 8 }}>付款紀錄</div>
                 {payments.map(p => <div key={p.id} style={{ fontSize: 12, padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}><span>{p.payment_type} — {p.payment_method || ''}</span><span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtPrice(p.amount)}</span></div>)}
@@ -211,7 +300,7 @@ export default function Cases() {
               {inp('站框日期', 'frame_date', 'date')}{inp('預計到倉', 'estimated_arrival', 'date')}
               {inp('實際到倉', 'actual_arrival', 'date')}{inp('安裝日期', 'install_date', 'date')}
               {inp('維修日期', 'repair_date', 'date')}
-              <button className="btn btn-primary" style={{ gridColumn: '1/-1' }} onClick={() => saveTab({ order_date: form.order_date || null, contract_month: form.contract_month, frame_date: form.frame_date || null, estimated_arrival: form.estimated_arrival || null, actual_arrival: form.actual_arrival || null, install_date: form.install_date || null, repair_date: form.repair_date || null })}>儲存進度</button>
+              {saveBtn('儲存進度', () => saveTab({ order_date: form.order_date || null, contract_month: form.contract_month, frame_date: form.frame_date || null, estimated_arrival: form.estimated_arrival || null, actual_arrival: form.actual_arrival || null, install_date: form.install_date || null, repair_date: form.repair_date || null }))}
             </div>
           )}
           {tab === 'factory' && (
@@ -259,7 +348,7 @@ export default function Cases() {
               <div className="form-group" style={{ margin: 0 }}><label style={{ fontSize: 12 }}>備註</label><textarea value={form.note || ''} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} className="search-box" style={{ padding: '8px 12px', fontSize: 13, minHeight: 70, resize: 'vertical', minWidth: 0 }} /></div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                 <div className="form-group" style={{ margin: 0, flex: 1 }}><label style={{ fontSize: 12 }}>狀態</label><select value={form.status || 'new'} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>{CASE_STEPS.map(s => <option key={s} value={s}>{CASE_STATUS_LABEL[s]}</option>)}<option value="cancelled">已取消</option></select></div>
-                <button className="btn btn-primary" onClick={() => saveTab({ status: form.status, note: form.note })}>儲存</button>
+                <button className="btn btn-primary" disabled={saving} onClick={() => saveTab({ status: form.status, note: form.note })}>{saving ? '儲存中...' : '儲存'}</button>
               </div>
             </div>
           )}

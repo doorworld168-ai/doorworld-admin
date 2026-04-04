@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { sbFetch } from '../api/supabase';
-import { fmtPrice, CTYPE_SHORT } from '../api/utils';
+import { fmtPrice, fmtDate, CTYPE_SHORT, downloadCSV } from '../api/utils';
 import { useToast } from '../components/UI/Toast';
 import StatCard from '../components/UI/StatCard';
 import Chart from 'chart.js/auto';
@@ -19,10 +19,14 @@ function getStatus(c) { const t = getTotal(c); if (!t) return 'none'; const p = 
 export default function Finance() {
   const [cases, setCases] = useState([]);
   const [filter, setFilter] = useState('outstanding');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(true);
   const toast = useToast();
   const charts = useRef({});
   const collRef = useRef(null), ctypeRef = useRef(null), monthRef = useRef(null);
+
+  useEffect(() => { return () => { Object.values(charts.current).forEach(c => c.destroy()); charts.current = {}; }; }, []);
 
   async function load() {
     setLoading(true);
@@ -56,6 +60,8 @@ export default function Finance() {
   cases.forEach(c => { const t = getTotal(c), p = getCollected(c); totalRev += t; collected += p; outstanding += Math.max(0, t - p); if (c.measure_fee) mFees += c.measure_fee; });
 
   let list = cases.filter(c => getTotal(c) > 0);
+  if (dateFrom) list = list.filter(c => (c.created_at || '') >= dateFrom);
+  if (dateTo) list = list.filter(c => (c.created_at || '') <= dateTo + 'T23:59:59');
   if (filter === 'outstanding') list = list.filter(c => getStatus(c) !== 'paid');
   else if (filter === 'paid') list = list.filter(c => getStatus(c) === 'paid');
   else if (filter === 'partial') list = list.filter(c => getStatus(c) === 'partial');
@@ -75,11 +81,29 @@ export default function Finance() {
       </div>
       <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 24 }}><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14 }}>月度已收 vs 未收</div><canvas ref={monthRef} style={{ maxHeight: 240 }} /></div>
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 700 }}>應收帳款</div>
         <select value={filter} onChange={e => setFilter(e.target.value)} style={{ padding: '7px 32px 7px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
           <option value="outstanding">未收清</option><option value="all">全部</option><option value="paid">已付清</option><option value="partial">部分收</option>
         </select>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 12, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>~</span>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 12, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+          {(dateFrom || dateTo) && <button className="btn btn-ghost btn-sm" onClick={() => { setDateFrom(''); setDateTo(''); }} style={{ fontSize: 11 }}>清除</button>}
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center' }}>共 {list.length} 筆</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => {
+            if (!list.length) return toast('沒有資料可匯出', 'error');
+            downloadCSV(
+              ['訂單', '客戶', '總價', '已收', '未收', '狀態'],
+              list.map(c => { const t = getTotal(c), p = getCollected(c); return [c.order_no || c.case_no || '', c.customer_name || '', t, p, Math.max(0, t - p), getStatus(c) === 'paid' ? '已付清' : getStatus(c) === 'partial' ? '部分收' : '未收']; }),
+              `財務管理_${new Date().toISOString().slice(0, 10)}.csv`
+            );
+            toast('已下載 CSV', 'success');
+          }} style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}>下載 CSV</button>
+        </div>
       </div>
       <div className="table-wrap">
         <table>

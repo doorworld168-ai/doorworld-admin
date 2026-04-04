@@ -2,20 +2,27 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 const MOBILE_ITEMS = [
   { path: '/', label: '總覽', icon: 'dashboard' },
-  { path: '/members', label: '會員', icon: 'group' },
-  { path: '/quotes', label: '估價', icon: 'receipt_long' },
   { path: '/cases', label: '案件', icon: 'assignment' },
+  { path: '/internalorder', label: '下單', icon: 'inventory' },
   { path: '/finance', label: '財務', icon: 'payments' },
-  { path: '/products', label: '產品', icon: 'door_front' },
+  { label: '更多', icon: 'menu', action: 'menu' },
 ];
 
-export default function MobileNav() {
+export default function MobileNav({ onMenuClick }) {
   const location = useLocation();
   const navigate = useNavigate();
 
   return (
     <nav className="mobile-nav">
       {MOBILE_ITEMS.map(item => {
+        if (item.action === 'menu') {
+          return (
+            <div key="menu" className="mobile-nav-item" onClick={onMenuClick}>
+              <span className="material-symbols-outlined">{item.icon}</span>
+              <span>{item.label}</span>
+            </div>
+          );
+        }
         const active = location.pathname === item.path;
         return (
           <div key={item.path}
