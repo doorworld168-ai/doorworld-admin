@@ -1,5 +1,6 @@
 // Formal Quote (報價單) PDF generator — opens print-ready HTML in new window
 // Used by FormalQuote and NewFormalQuote pages
+import { sbFetch } from './supabase';
 
 const COMPANY = {
   nameZh: '展億室內開發有限公司',
@@ -13,81 +14,100 @@ const COMPANY = {
 };
 
 const DOOR_LABEL = { single: '單門', mother: '子母門', double: '雙開門', fire: '防火單門', room: '房間門', bathroom: '衛浴門', sliding: '橫拉門' };
+const FIRE_LABEL = { none: '一般（非防火）', f60a: 'F60A 防火', f60a_smoke: 'F60A 防火遮煙' };
 
 function fmtP(v) { return (v || v === 0) ? 'NT$ ' + Number(v).toLocaleString() : '—'; }
 function fmtDate(str) {
   const d = str ? new Date(str) : new Date();
   return d.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
 }
+function esc(s) { return String(s == null ? '' : s).replace(/[<>&"]/g, m => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[m])); }
 
 /**
  * Open a formal quote PDF (報價單) in a new window with print dialog
- * @param {object} c - case/quote record from Supabase
+ * Fetches product thumbnail before rendering
+ * @param {object} c - case record from Supabase
  */
-export function printFormalQuote(c) {
+export async function printFormalQuote(c) {
   if (!c) { alert('找不到報價單資料'); return; }
+
+  // Fetch product thumbnail
+  let thumbnailUrl = '';
+  if (c.product_code) {
+    try {
+      const imgs = await sbFetch(`products?full_code=eq.${encodeURIComponent(c.product_code)}&select=thumbnail_url`);
+      thumbnailUrl = (imgs && imgs[0] && imgs[0].thumbnail_url) || '';
+    } catch {}
+  }
 
   const fq = c.formal_quote_data || {};
   const accessories = Array.isArray(fq.accessories) ? fq.accessories : [];
-  const services = Array.isArray(fq.services) ? fq.services : [];
+  const specialReqs = Array.isArray(fq.special_requirements) ? fq.special_requirements : [];
   const quoteNo = c.formal_quote_no || c.order_no || c.case_no || '—';
   const today = fmtDate(null);
   const dateStr = fmtDate(c.created_at);
 
   const doorLabel = DOOR_LABEL[c.door_type] || c.door_type || '—';
-  const fireLabel = fq.fire_type === 'f60a' ? 'F60A 防火' : fq.fire_type === 'f60a_smoke' ? 'F60A 遮煙' : c.is_fireproof ? '防火' : '一般';
+  const fireLabel = FIRE_LABEL[fq.fire_type] || (c.is_fireproof ? '防火' : '一般');
   const wCM = c.actual_width_cm || (fq.width_mm ? Math.round(fq.width_mm / 10) : '');
   const hCM = c.actual_height_cm || (fq.height_mm ? Math.round(fq.height_mm / 10) : '');
   const sizeStr = wCM && hCM ? `寬 ${wCM} × 高 ${hCM} cm` : '—';
   const qty = c.quantity || 1;
 
-  // Build main product rows (门扇单价 + 超尺寸等)
-  const mainRows = [];
-  if (fq.door_unit_price || c.official_price) mainRows.push(['門扇單價', fq.door_unit_price || c.official_price]);
-  if (fq.oversize_charge) mainRows.push(['超尺寸加收', fq.oversize_charge]);
-  if (fq.elevator_charge) mainRows.push(['無電梯搬運', fq.elevator_charge]);
-  if (mainRows.length === 0) mainRows.push(['門扇總價', c.official_price || 0]);
+  // Accessory rows: show standard OR upgrade based on useUpgrade flag
+  const accList = accessories
+    .map(a => {
+      const choice = a.useUpgrade && a.upgrade ? a.upgrade : a.standard;
+      const level = a.useUpgrade && a.upgrade ? '升級' : '標配';
+      return { label: a.label || a.key, item: choice || '—', level };
+    })
+    .filter(a => a.item && a.item !== '—');
 
-  // Calculate subtotal
-  let subtotal = 0;
-  mainRows.forEach(([, v]) => subtotal += Number(v || 0));
-  services.forEach(s => subtotal += Number(s.amount || s.price || 0));
-  accessories.forEach(a => subtotal += Number(a.amount || (a.price * (a.qty || 1)) || 0));
-
-  // If official_price already exists, trust it as subtotal
-  if (c.total_with_tax) {
-    const taxFromTotal = Math.round(c.total_with_tax / 21); // 5/105
-    subtotal = c.total_with_tax - taxFromTotal;
-  } else if (c.official_price) {
-    subtotal = c.official_price;
-  }
-
-  const tax = Math.round(subtotal * 0.05);
-  const totalWithTax = c.total_with_tax || (subtotal + tax);
-
-  // Render accessory rows
-  const accRowsHtml = accessories.length === 0 ? '' : `
+  const accRowsHtml = accList.length === 0 ? '' : `
     <div class="sec"><div class="stitle"><span class="stitle-txt">五金配件</span></div>
     <table class="bd-table">
-      ${accessories.map(a => `<tr>
-        <td class="bdl">${a.name || a.item || '—'}</td>
-        <td class="bdv" style="text-align:center;width:70px;font-size:10px">${a.qty || 1}</td>
-        <td class="bdv">${fmtP(a.amount || (Number(a.price || 0) * Number(a.qty || 1)))}</td>
+      <colgroup><col style="width:90px"><col><col style="width:54px"></colgroup>
+      ${accList.map(a => `<tr>
+        <td class="bdl">${esc(a.label)}</td>
+        <td class="bdv" style="text-align:left;font-weight:500">${esc(a.item)}</td>
+        <td class="bdv" style="text-align:center;font-size:9px;color:${a.level === '升級' ? '#c9a227' : '#888'}">${a.level}</td>
       </tr>`).join('')}
     </table></div>`;
 
-  // Render service rows
-  const svcRowsHtml = services.length === 0 ? '' : `
-    <div class="sec"><div class="stitle"><span class="stitle-txt">施工項目</span></div>
-    <table class="bd-table">
-      ${services.map(s => `<tr>
-        <td class="bdl">${s.name || s.item || '—'}</td>
-        <td class="bdv">${fmtP(s.amount || s.price)}</td>
-      </tr>`).join('')}
+  // Specs block (install method, frame, direction, etc.)
+  const specPairs = [
+    ['開門方向', fq.door_direction],
+    ['交貨方式', fq.delivery_type],
+    ['安裝方式', fq.install_method],
+    ['有無電梯', fq.has_elevator === true ? '有' : fq.has_elevator === false ? '無' : null],
+    ['畫框', fq.art_frame && fq.art_frame !== '無' ? fq.art_frame : null],
+  ].filter(([, v]) => v);
+  const specHtml = specPairs.length === 0 ? '' : `
+    <div class="sec"><div class="stitle"><span class="stitle-txt">安裝規格</span></div>
+    <table class="spec-grid">
+      ${specPairs.reduce((acc, p, i) => {
+        if (i % 2 === 0) acc.push([p]); else acc[acc.length - 1].push(p);
+        return acc;
+      }, []).map(row => `<tr>${row.map(([l, v]) => `<td class="tdl">${esc(l)}</td><td class="tdv">${esc(v)}</td>`).join('')}${row.length === 1 ? '<td class="tdl" style="border:none;background:none"></td><td class="tdv" style="border:none;background:none"></td>' : ''}</tr>`).join('')}
     </table></div>`;
+
+  const specReqHtml = specialReqs.length === 0 ? '' : `
+    <div class="sec"><div class="stitle"><span class="stitle-txt">特殊需求</span></div>
+    <div class="special-box">${specialReqs.map(s => `<span class="tag">${esc(s)}</span>`).join('')}</div></div>`;
+
+  // Financial calculation: total_with_tax is already tax-included, break it down
+  const totalWithTax = Number(c.total_with_tax || 0);
+  const subtotal = totalWithTax ? Math.round(totalWithTax / 1.05) : Number(c.official_price || 0);
+  const tax = totalWithTax ? totalWithTax - subtotal : Math.round(subtotal * 0.05);
+  const finalTotal = totalWithTax || (subtotal + tax);
+  const unitPrice = qty > 0 ? Math.round(subtotal / qty) : subtotal;
+
+  const imgHtml = thumbnailUrl
+    ? `<img src="${esc(thumbnailUrl)}" style="width:120px;height:120px;object-fit:cover;border:1px solid #d4af37;display:block" crossorigin="anonymous">`
+    : `<div style="width:120px;height:120px;border:1px dashed #d4af37;display:flex;align-items:center;justify-content:center;font-size:9px;color:#c9a227;letter-spacing:1px">暫無圖片</div>`;
 
   const html = `<!DOCTYPE html><html><head>
-<meta charset="utf-8"><title>報價單 ${quoteNo}</title>
+<meta charset="utf-8"><title>報價單 ${esc(quoteNo)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -115,13 +135,19 @@ body{font-family:"Noto Sans TC",sans-serif;background:#fff;color:#1a1a1a;font-si
 .stitle-txt{font-size:8px;font-weight:700;letter-spacing:3px;text-transform:uppercase;white-space:nowrap;padding:3px 10px;background:#1a1a1a;color:#c9a227}
 .stitle::after{content:"";flex:1;height:1px;background:#d4af37}
 .sec{margin-bottom:9px}
+.prod-row{display:flex;gap:11px;align-items:flex-start}
+.prod-info{flex:1}
 table{width:100%;border-collapse:collapse}
 .tdl{width:95px;padding:5px 10px;background:#f9f6ec;color:#555;font-size:9.5px;font-weight:600;border:1px solid #e2d5a0;vertical-align:middle}
 .tdv{padding:5px 10px;color:#1a1a1a;font-size:11px;border:1px solid #e2d5a0;word-break:break-word}
+.spec-grid .tdl{width:68px}
+.spec-grid .tdv{font-size:10.5px}
 .bd-table{border:1px solid #e2d5a0}
 .bdl{padding:5px 12px;background:#f9f6ec;color:#555;font-size:10px;font-weight:600;border-bottom:1px solid #e8dfb8}
 .bdv{padding:5px 12px;color:#1a1a1a;font-size:11px;text-align:right;font-weight:600;border-bottom:1px solid #e8dfb8;font-variant-numeric:tabular-nums}
 .bd-table tr:last-child .bdl,.bd-table tr:last-child .bdv{border-bottom:none}
+.special-box{padding:8px 10px;background:#fff8e5;border:1px dashed #d4af37;border-radius:3px}
+.tag{display:inline-block;padding:2px 10px;background:#1a1a1a;color:#c9a227;font-size:10px;font-weight:700;border-radius:2px;margin:2px 4px 2px 0;letter-spacing:1px}
 .tax-box{margin-top:8px;border:1px solid #1a1a1a}
 .tax-row{display:flex;justify-content:space-between;padding:7px 14px;border-bottom:1px solid #333}
 .tax-row:last-child{border-bottom:none;background:#1a1a1a;color:#c9a227}
@@ -156,39 +182,44 @@ table{width:100%;border-collapse:collapse}
     </div>
     <div class="hdr-r">
       <div class="doc-type">正式報價單 Formal Quotation</div>
-      <div class="qno">${quoteNo}</div>
+      <div class="qno">${esc(quoteNo)}</div>
       <span class="badge">正式報價</span>
       <div class="doc-date">${dateStr}</div>
     </div>
   </div>
   <div class="infobar">
-    <div class="ic"><div class="icl">客戶姓名</div><div class="icv">${c.customer_name || '—'}</div></div>
-    <div class="ic"><div class="icl">聯絡電話</div><div class="icv">${c.customer_phone || '—'}</div></div>
-    ${c.sales_person ? `<div class="ic"><div class="icl">業務窗口</div><div class="icv">${c.sales_person}</div></div>` : ''}
+    <div class="ic"><div class="icl">客戶姓名</div><div class="icv">${esc(c.customer_name || '—')}</div></div>
+    <div class="ic"><div class="icl">聯絡電話</div><div class="icv">${esc(c.customer_phone || '—')}</div></div>
+    ${c.sales_person ? `<div class="ic"><div class="icl">業務窗口</div><div class="icv">${esc(c.sales_person)}</div></div>` : ''}
   </div>
-  ${c.case_address ? `<div class="addr"><span class="addr-lbl">施工地址</span>${c.case_address}</div>` : ''}
+  ${c.case_address ? `<div class="addr"><span class="addr-lbl">施工地址</span>${esc(c.case_address)}</div>` : ''}
 
   <div class="sec"><div class="stitle"><span class="stitle-txt">產品資訊</span></div>
-  <table>
-    <tr><td class="tdl">產品編號</td><td class="tdv" style="font-family:monospace;font-size:12px;font-weight:700">${c.product_code || '—'}</td></tr>
-    <tr><td class="tdl">門型</td><td class="tdv">${doorLabel}　/　${fireLabel}</td></tr>
-    <tr><td class="tdl">尺寸規格</td><td class="tdv">${sizeStr}</td></tr>
-    <tr><td class="tdl">數量</td><td class="tdv">${qty} 樘</td></tr>
-  </table></div>
+    <div class="prod-row">
+      <div class="prod-info"><table>
+        <tr><td class="tdl">產品編號</td><td class="tdv" style="font-family:monospace;font-size:12px;font-weight:700">${esc(c.product_code || '—')}</td></tr>
+        <tr><td class="tdl">門型</td><td class="tdv">${esc(doorLabel)}</td></tr>
+        <tr><td class="tdl">防火規格</td><td class="tdv">${esc(fireLabel)}</td></tr>
+        <tr><td class="tdl">尺寸規格</td><td class="tdv">${esc(sizeStr)}</td></tr>
+        <tr><td class="tdl">數量</td><td class="tdv">${qty} 樘</td></tr>
+      </table></div>
+      <div style="flex-shrink:0">${imgHtml}</div>
+    </div>
+  </div>
 
-  <div class="sec"><div class="stitle"><span class="stitle-txt">門扇費用</span></div>
-  <table class="bd-table">
-    ${mainRows.map(([l, v]) => `<tr><td class="bdl">${l}</td><td class="bdv">${fmtP(v)}</td></tr>`).join('')}
-  </table></div>
-
+  ${specHtml}
   ${accRowsHtml}
-  ${svcRowsHtml}
+  ${specReqHtml}
 
-  <div class="sec">
+  <div class="sec"><div class="stitle"><span class="stitle-txt">金額明細</span></div>
+    <table class="bd-table">
+      <tr><td class="bdl">單樘報價（未稅）</td><td class="bdv">${fmtP(unitPrice)}</td></tr>
+      <tr><td class="bdl">數量</td><td class="bdv">× ${qty} 樘</td></tr>
+    </table>
     <div class="tax-box">
       <div class="tax-row subtotal"><div class="tax-lbl">小計（未稅）</div><div class="tax-val">${fmtP(subtotal)}</div></div>
       <div class="tax-row tax"><div class="tax-lbl">營業稅 5%</div><div class="tax-val">${fmtP(tax)}</div></div>
-      <div class="tax-row"><div class="tax-lbl">含稅總計</div><div class="tax-val">${fmtP(totalWithTax)}</div></div>
+      <div class="tax-row"><div class="tax-lbl">含稅總計</div><div class="tax-val">${fmtP(finalTotal)}</div></div>
     </div>
   </div>
 
@@ -210,7 +241,6 @@ table{width:100%;border-collapse:collapse}
     <div>列印日期：${today}</div>
   </div>
 </div>
-<script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>
 </body></html>`;
 
   const win = window.open('', '_blank', 'width=820,height=1160');
