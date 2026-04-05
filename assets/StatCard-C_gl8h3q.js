@@ -1,0 +1,1 @@
+import{j as s}from"./index-Cpaflyr8.js";function d({label:e,value:t,color:a,style:i}){return s.jsxs("div",{className:"stat-card",style:i,children:[s.jsx("div",{className:"label",children:e}),s.jsx("div",{className:"value",style:a?{color:a}:void 0,children:t??"—"})]})}export{d as S};

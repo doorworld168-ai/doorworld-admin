@@ -103,7 +103,7 @@ export async function printFormalQuote(c) {
   const unitPrice = qty > 0 ? Math.round(subtotal / qty) : subtotal;
 
   const imgHtml = thumbnailUrl
-    ? `<img src="${esc(thumbnailUrl)}" style="width:120px;height:120px;object-fit:cover;border:1px solid #d4af37;display:block" crossorigin="anonymous">`
+    ? `<img src="${esc(thumbnailUrl)}" alt="" style="width:120px;height:120px;object-fit:cover;border:1px solid #d4af37;display:block">`
     : `<div style="width:120px;height:120px;border:1px dashed #d4af37;display:flex;align-items:center;justify-content:center;font-size:9px;color:#c9a227;letter-spacing:1px">暫無圖片</div>`;
 
   const html = `<!DOCTYPE html><html><head>
