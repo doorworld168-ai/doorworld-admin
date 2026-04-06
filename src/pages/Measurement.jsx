@@ -84,7 +84,7 @@ export default function Measurement() {
     setPhotos(newPhotos);
     // Auto-save photos
     if (modal.data?.id) {
-      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ site_photos: newPhotos }) }).catch(() => {});
+      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ site_photos: newPhotos }) }).catch(e => toast(e.message, 'error'));
     }
     setPhotoStatus(`已上傳 ${uploaded} 張照片`);
     setTimeout(() => setPhotoStatus(''), 2000);
@@ -95,7 +95,7 @@ export default function Measurement() {
     const newPhotos = photos.filter((_, i) => i !== idx);
     setPhotos(newPhotos);
     if (modal.data?.id) {
-      sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ site_photos: newPhotos }) }).catch(() => {});
+      sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ site_photos: newPhotos }) }).catch(e => toast(e.message, 'error'));
     }
   }
 

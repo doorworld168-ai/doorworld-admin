@@ -59,6 +59,14 @@ function NotFound() {
   );
 }
 
+// Route guard: check permission before rendering
+function Guard({ perm, adminOnly, children }) {
+  const { user, hasPerm } = useAuth();
+  if (adminOnly && !user?.isAdmin) return <NotFound />;
+  if (perm && !hasPerm(perm, 'view')) return <NotFound />;
+  return children;
+}
+
 function AppContent() {
   const location = useLocation();
   const title = TITLES[location.pathname] || 'Admin';
@@ -74,17 +82,17 @@ function AppContent() {
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
-                <Route path="/bossview" element={<BossView />} />
-                <Route path="/members" element={<Members />} />
-                <Route path="/products" element={<Products />} />
-                <Route path="/service" element={<Service />} />
+                <Route path="/bossview" element={<Guard adminOnly><BossView /></Guard>} />
+                <Route path="/members" element={<Guard perm="members"><Members /></Guard>} />
+                <Route path="/products" element={<Guard perm="products"><Products /></Guard>} />
+                <Route path="/service" element={<Guard perm="service"><Service /></Guard>} />
                 <Route path="/quotes" element={<Quotes />} />
                 <Route path="/quotes/new" element={<NewQuote />} />
                 <Route path="/measurement" element={<Measurement />} />
                 <Route path="/drafting" element={<Drafting />} />
                 <Route path="/formalquote" element={<FormalQuote />} />
                 <Route path="/formalquote/new" element={<NewFormalQuote />} />
-                <Route path="/cases" element={<Cases />} />
+                <Route path="/cases" element={<Guard perm="cases"><Cases /></Guard>} />
                 <Route path="/ordering" element={<Ordering />} />
                 <Route path="/salesorder" element={<SalesOrder />} />
                 <Route path="/internalorder" element={<InternalOrder />} />
@@ -92,9 +100,9 @@ function AppContent() {
                 <Route path="/twfactory" element={<TwFactory />} />
                 <Route path="/installation" element={<Installation />} />
                 <Route path="/payment" element={<PaymentTracking />} />
-                <Route path="/finance" element={<Finance />} />
+                <Route path="/finance" element={<Guard perm="finance"><Finance /></Guard>} />
                 <Route path="/accessories" element={<Accessories />} />
-                <Route path="/staff" element={<Staff />} />
+                <Route path="/staff" element={<Guard adminOnly><Staff /></Guard>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

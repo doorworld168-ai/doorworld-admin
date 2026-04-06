@@ -233,6 +233,7 @@ export default function InternalOrder() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `${c.formal_quote_no || c.case_no || 'quote'}.csv`; a.click();
+    URL.revokeObjectURL(a.href);
     toast(`已下載 ${c.formal_quote_no || c.case_no}`, 'success');
   }
 
@@ -249,6 +250,7 @@ export default function InternalOrder() {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `內勤下單_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(a.href);
     toast('已下載 CSV', 'success');
   }
 

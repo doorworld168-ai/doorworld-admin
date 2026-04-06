@@ -38,7 +38,7 @@ export default function Finance() {
   }
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (cases.length) renderCharts(); }, [cases]);
+  useEffect(() => { renderCharts(); }, [cases]);
 
   function renderCharts() {
     Object.values(charts.current).forEach(c => c.destroy());

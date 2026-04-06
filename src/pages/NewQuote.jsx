@@ -21,6 +21,15 @@ export default function NewQuote() {
   const [twDistricts, setTwDistricts] = useState({});
   const searchTimerM = useRef(null);
   const searchTimerP = useRef(null);
+  const searchSeqM = useRef(0);
+  const searchSeqP = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(searchTimerM.current);
+      clearTimeout(searchTimerP.current);
+    };
+  }, []);
 
   const [form, setForm] = useState({
     member_id: null, line_user_id: '', customer_name: '', customer_phone: '',
@@ -45,10 +54,16 @@ export default function NewQuote() {
     setMemberSearch(q);
     clearTimeout(searchTimerM.current);
     if (!q.trim()) { setShowMembers(false); return; }
+    const seq = ++searchSeqM.current;
     searchTimerM.current = setTimeout(async () => {
-      const data = await sbFetch(`members?or=(display_name.ilike.*${encodeURIComponent(q)}*,phone.ilike.*${encodeURIComponent(q)}*)&limit=10`);
-      setMembers(data || []);
-      setShowMembers(true);
+      try {
+        const data = await sbFetch(`members?or=(display_name.ilike.*${encodeURIComponent(q)}*,phone.ilike.*${encodeURIComponent(q)}*)&limit=10`);
+        if (seq !== searchSeqM.current) return;
+        setMembers(data || []);
+        setShowMembers(true);
+      } catch (e) {
+        if (seq === searchSeqM.current) toast(e.message, 'error');
+      }
     }, 300);
   }
 
@@ -62,10 +77,16 @@ export default function NewQuote() {
     setProductSearch(q);
     clearTimeout(searchTimerP.current);
     if (!q.trim()) { setShowProducts(false); return; }
+    const seq = ++searchSeqP.current;
     searchTimerP.current = setTimeout(async () => {
-      const data = await sbFetch(`products?or=(full_code.ilike.*${encodeURIComponent(q)}*,name.ilike.*${encodeURIComponent(q)}*)&is_active=eq.true&limit=10`);
-      setProducts(data || []);
-      setShowProducts(true);
+      try {
+        const data = await sbFetch(`products?or=(full_code.ilike.*${encodeURIComponent(q)}*,name.ilike.*${encodeURIComponent(q)}*)&is_active=eq.true&limit=10`);
+        if (seq !== searchSeqP.current) return;
+        setProducts(data || []);
+        setShowProducts(true);
+      } catch (e) {
+        if (seq === searchSeqP.current) toast(e.message, 'error');
+      }
     }, 300);
   }
 

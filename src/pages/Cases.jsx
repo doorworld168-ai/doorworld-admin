@@ -56,18 +56,22 @@ export default function Cases() {
     if (dateTo) path += `&created_at=lte.${dateTo}T23:59:59`;
     if (mineOnly && user?.display_name) path += `&sales_person=eq.${encodeURIComponent(user.display_name)}`;
     try {
-      setTotal(await proxyCount(path.replace('select=*', 'select=id')));
-      const data = await sbFetch(path + `&offset=${page * pageSize}&limit=${pageSize}`) || [];
-      setRows(data);
-      // Calculate delayed count from active cases
-      const activeCases = await sbFetch('cases?select=*&status=not.in.(completed,cancelled)&limit=500') || [];
-      const delayedCount = activeCases.filter(c => calcDelay(c).delayed).length;
+      // Parallelize independent API calls
+      const [cnt, data, activeCases, totalCnt, activeCnt, completedCnt, monthCnt] = await Promise.all([
+        proxyCount(path.replace('select=*', 'select=id')),
+        sbFetch(path + `&offset=${page * pageSize}&limit=${pageSize}`),
+        sbFetch('cases?select=*&status=not.in.(completed,cancelled)&limit=500'),
+        proxyCount('cases?select=id'),
+        proxyCount('cases?select=id&status=in.(new,measure_scheduled,measured,official_quoted,order_confirmed,deposit_paid,production,shipped,arrived,installed)'),
+        proxyCount('cases?select=id&status=eq.completed'),
+        proxyCount(`cases?select=id&created_at=gte.${new Date().toISOString().slice(0, 7)}-01`)
+      ]);
+      setTotal(cnt);
+      setRows(data || []);
       setStats({
-        total: await proxyCount('cases?select=id'),
-        active: await proxyCount('cases?select=id&status=in.(new,measure_scheduled,measured,official_quoted,order_confirmed,deposit_paid,production,shipped,arrived,installed)'),
-        delayed: delayedCount,
-        completed: await proxyCount('cases?select=id&status=eq.completed'),
-        month: await proxyCount(`cases?select=id&created_at=gte.${new Date().toISOString().slice(0, 7)}-01`),
+        total: totalCnt, active: activeCnt,
+        delayed: (activeCases || []).filter(c => calcDelay(c).delayed).length,
+        completed: completedCnt, month: monthCnt
       });
     } catch (e) { toast(e.message, 'error'); }
     setLoading(false);
@@ -88,14 +92,21 @@ export default function Cases() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Track which case modal is open to prevent stale responses
+  const activeCaseRef = useRef(null);
+
   function openCase(c) {
     const copy = { ...c };
     setForm(copy);
     setInitialForm(copy);
     setTab('customer');
     setModal({ open: true, data: c });
-    sbFetch(`payments?case_id=eq.${c.id}&order=paid_at.desc`).then(p => setPayments(p || [])).catch(() => {});
-    sbFetch(`production?case_id=eq.${c.id}&order=created_at.desc`).then(p => setProductions(p || [])).catch(() => {});
+    setPayments([]);
+    setProductions([]);
+    activeCaseRef.current = c.id;
+    const caseId = c.id;
+    sbFetch(`payments?case_id=eq.${caseId}&order=paid_at.desc`).then(p => { if (activeCaseRef.current === caseId) setPayments(p || []); }).catch(() => {});
+    sbFetch(`production?case_id=eq.${caseId}&order=created_at.desc`).then(p => { if (activeCaseRef.current === caseId) setProductions(p || []); }).catch(() => {});
   }
 
   function isDirty() {

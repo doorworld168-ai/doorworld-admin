@@ -21,6 +21,11 @@ export default function NewFormalQuote() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const productTimer = useRef(null);
+  const productSeq = useRef(0);
+
+  useEffect(() => {
+    return () => { clearTimeout(productTimer.current); };
+  }, []);
 
   const [twDistricts, setTwDistricts] = useState({});
   const [staffList, setStaffList] = useState([]);
@@ -118,10 +123,16 @@ export default function NewFormalQuote() {
     setProductSearch(q);
     clearTimeout(productTimer.current);
     if (!q.trim()) { setShowProducts(false); return; }
+    const seq = ++productSeq.current;
     productTimer.current = setTimeout(async () => {
-      const data = await sbFetch(`products?select=*&is_active=eq.true&or=(full_code.ilike.*${encodeURIComponent(q)}*,name.ilike.*${encodeURIComponent(q)}*)&limit=6`).catch(() => []);
-      setProducts(data || []);
-      setShowProducts(true);
+      try {
+        const data = await sbFetch(`products?select=*&is_active=eq.true&or=(full_code.ilike.*${encodeURIComponent(q)}*,name.ilike.*${encodeURIComponent(q)}*)&limit=6`);
+        if (seq !== productSeq.current) return;
+        setProducts(data || []);
+        setShowProducts(true);
+      } catch (e) {
+        if (seq === productSeq.current) toast(e.message, 'error');
+      }
     }, 300);
   }
 
@@ -222,7 +233,7 @@ export default function NewFormalQuote() {
     try {
       const res = await sbFetch('cases', { method: 'POST', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(body) });
       if (importedQuote) {
-        await sbFetch(`quotes?id=eq.${importedQuote.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: res?.[0]?.id, status: 'confirmed' }) }).catch(() => {});
+        await sbFetch(`quotes?id=eq.${importedQuote.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: res?.[0]?.id, status: 'confirmed' }) }).catch(e => toast(`估價單連結失敗: ${e.message}`, 'error'));
       }
       toast(`報價單已建立: ${formalQuoteNo}`, 'success');
       navigate('/formalquote');

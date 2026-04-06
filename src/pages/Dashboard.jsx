@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
 import { fmtDate, fmtPrice, CASE_STATUS_LABEL, CASE_STATUS_COLOR, CASE_STEPS, CTYPE_SHORT, calcDelay } from '../api/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../components/UI/Toast';
 import StatCard from '../components/UI/StatCard';
 import Chart from 'chart.js/auto';
 
@@ -30,6 +31,7 @@ export default function Dashboard() {
   const [filter, setFilter] = useState('all');
   const [tab, setTab] = useState('overview'); // overview | sales | internal
   const { user } = useAuth();
+  const toast = useToast();
   const statusChartRef = useRef(null);
   const salesChartRef = useRef(null);
   const revenueChartRef = useRef(null);
@@ -37,15 +39,16 @@ export default function Dashboard() {
 
   useEffect(() => { loadData(); }, []);
 
-  useEffect(() => { return () => { Object.values(charts.current).forEach(c => c.destroy()); charts.current = {}; }; }, []);
+  const chartTimer = useRef(null);
+  useEffect(() => { return () => { clearTimeout(chartTimer.current); Object.values(charts.current).forEach(c => c.destroy()); charts.current = {}; }; }, []);
 
   async function loadData() {
     setLoading(true);
     try {
       const data = await sbFetch('cases?select=*&status=not.in.(completed,cancelled)&order=created_at.desc&limit=200');
       setCases(data || []);
-      setTimeout(() => renderCharts(data || []), 100);
-    } catch (e) { console.error(e); }
+      chartTimer.current = setTimeout(() => renderCharts(data || []), 100);
+    } catch (e) { toast(e.message, 'error'); }
     setLoading(false);
   }
 
@@ -87,7 +90,7 @@ export default function Dashboard() {
           data: { labels: months.map(m => m.split('-')[1] + '月'), datasets: [{ data: months.map(m => monthMap[m]), backgroundColor: 'rgba(201,162,39,0.25)', borderColor: '#c9a227', borderWidth: 1.5, borderRadius: 6 }] },
           options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { color: '#99907b' } }, y: { grid: { color: 'rgba(77,70,53,0.12)' }, ticks: { color: '#99907b', callback: v => v >= 10000 ? (v / 10000).toFixed(0) + '萬' : v } } } }
         });
-      });
+      }).catch(err => toast(err.message, 'error'));
     }
   }
 
