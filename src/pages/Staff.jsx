@@ -182,7 +182,7 @@ export default function Staff() {
                 <td><strong>{s.display_name}</strong></td>
                 <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{s.username}</td>
                 <td>{s.is_active !== false ? <span style={{ color: 'var(--success)', fontSize: 11 }}>啟用</span> : <span style={{ color: 'var(--danger)', fontSize: 11 }}>停用</span>}</td>
-                <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{Object.entries(s.permissions || {}).filter(([, v]) => v?.view).map(([k]) => k).join(', ') || '—'}</td>
+                <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{Object.entries(s.permissions || {}).filter(([, v]) => v?.view).map(([k]) => { const m = PERM_MODULES.find(p => p.key === k); return m ? m.label : k; }).join('、') || '—'}</td>
                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(s.created_at)}</td>
                 <td><div className="actions"><button className="btn btn-ghost btn-sm" onClick={() => openModal(s)}>編輯</button><button className="btn btn-danger btn-sm" onClick={() => del(s)}>刪除</button></div></td>
               </tr>
