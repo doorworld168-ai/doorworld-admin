@@ -8,6 +8,68 @@ import StatCard from '../components/UI/StatCard';
 
 const TW_DISTRICTS_URL = 'https://raw.githubusercontent.com/donma/TaiwanAddressCityAreaRoadChineseEnglishJSON/master/CityCountyData.json';
 
+function fmtD(d) { return d ? new Date(d).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) : '—'; }
+
+function CalendarView({ data, dateField, onClickDate }) {
+  const [viewMonth, setViewMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const byDate = {};
+  data.forEach(c => {
+    const d = c[dateField];
+    if (!d) return;
+    const key = d.slice(0, 10);
+    if (!byDate[key]) byDate[key] = [];
+    byDate[key].push(c);
+  });
+
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(<div key={'e' + i} />);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const cases = byDate[dateStr] || [];
+    const isToday = dateStr === today;
+    cells.push(
+      <div key={d} onClick={() => cases.length && onClickDate(dateStr)} style={{
+        minHeight: 60, padding: 4, border: '1px solid var(--outline)', borderRadius: 4,
+        background: isToday ? 'rgba(236,194,70,.06)' : 'var(--surface-low)',
+        cursor: cases.length ? 'pointer' : 'default', position: 'relative'
+      }}>
+        <div style={{ fontSize: 11, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--gold)' : 'var(--text-muted)', marginBottom: 2 }}>{d}</div>
+        {cases.slice(0, 3).map((c, i) => (
+          <div key={c.id} style={{ fontSize: 9, padding: '1px 3px', borderRadius: 3, marginBottom: 1, background: c.status === 'measured' ? 'rgba(16,185,129,.15)' : 'rgba(236,194,70,.15)', color: c.status === 'measured' ? 'var(--success)' : 'var(--gold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.customer_name}</div>
+        ))}
+        {cases.length > 3 && <div style={{ fontSize: 8, color: 'var(--text-muted)' }}>+{cases.length - 3}</div>}
+        {cases.length > 0 && <div style={{ position: 'absolute', top: 4, right: 4, width: 16, height: 16, borderRadius: '50%', background: 'var(--gold)', color: '#3d2e00', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{cases.length}</div>}
+      </div>
+    );
+  }
+
+  const monthLabel = viewMonth.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long' });
+  const navBtn = { background: 'none', border: '1px solid var(--outline)', borderRadius: 4, padding: '4px 10px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 };
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <button style={navBtn} onClick={() => setViewMonth(new Date(year, month - 1, 1))}>← 上月</button>
+        <strong style={{ fontSize: 15, fontFamily: 'var(--font-heading)' }}>{monthLabel}</strong>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button style={navBtn} onClick={() => setViewMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>今天</button>
+          <button style={navBtn} onClick={() => setViewMonth(new Date(year, month + 1, 1))}>下月 →</button>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', marginBottom: 4 }}>
+        {['日', '一', '二', '三', '四', '五', '六'].map(d => <div key={d} style={{ padding: 4, fontWeight: 600 }}>{d}</div>)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>{cells}</div>
+    </div>
+  );
+}
+
 export default function Measurement() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +79,9 @@ export default function Measurement() {
   const [photos, setPhotos] = useState([]);
   const [photoStatus, setPhotoStatus] = useState('');
   const [form, setForm] = useState({ date: '', staff: '', note: '', width: '', height: '', city: '', dist: '', addr: '' });
+  const [view, setView] = useState('list');
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [filter, setFilter] = useState('all');
   const toast = useToast();
 
   async function load() {
@@ -126,25 +191,50 @@ export default function Measurement() {
     } catch (e) { toast('儲存失敗: ' + e.message, 'error'); }
   }
 
-  const scheduled = data.filter(c => c.measure_date).length;
-  const done = data.filter(c => c.status === 'measured').length;
+  const noDate = data.filter(c => !c.measure_date);
+  const scheduled = data.filter(c => c.measure_date && c.status !== 'measured');
+  const done = data.filter(c => c.status === 'measured');
   const inputStyle = { padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)', width: '100%' };
+
+  let filtered = data;
+  if (filter === 'nodate') filtered = noDate;
+  if (filter === 'scheduled') filtered = scheduled;
+  if (filter === 'done') filtered = done;
+  if (selectedDate) filtered = data.filter(c => c.measure_date && c.measure_date.slice(0, 10) === selectedDate);
+
+  const viewToggle = { background: 'none', border: '1px solid var(--outline)', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 600 };
+  const filterBtn = (label, val, color) => {
+    const on = filter === val && !selectedDate;
+    return <button key={val} onClick={() => { setFilter(val); setSelectedDate(null); }} style={{ padding: '5px 11px', borderRadius: 6, border: `1px solid ${on ? 'var(--gold)' : 'var(--border)'}`, background: on ? 'var(--gold-dim)' : 'var(--surface-2)', color: on ? (color || 'var(--gold)') : 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontWeight: on ? 700 : 500 }}>{label}</button>;
+  };
 
   return (
     <div>
       <div className="page-header">
         <div className="page-title-wrap"><div className="page-title">丈量安排</div><div className="page-subtitle">管理現場丈量排程與勘查紀錄</div></div>
-        <button className="btn btn-primary" onClick={load}>↻ 更新</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button style={{ ...viewToggle, color: view === 'calendar' ? 'var(--gold)' : 'var(--text-muted)', borderColor: view === 'calendar' ? 'var(--gold)' : 'var(--outline)' }} onClick={() => { setView('calendar'); setSelectedDate(null); }}>📅 月曆</button>
+          <button style={{ ...viewToggle, color: view === 'list' ? 'var(--gold)' : 'var(--text-muted)', borderColor: view === 'list' ? 'var(--gold)' : 'var(--outline)' }} onClick={() => { setView('list'); setSelectedDate(null); }}>☰ 列表</button>
+          <button className="btn btn-primary" onClick={load}>↻ 更新</button>
+        </div>
       </div>
       <div className="stats">
-        <StatCard label="待安排" value={data.length - scheduled} color="var(--danger)" />
-        <StatCard label="已排程" value={scheduled - done} />
-        <StatCard label="丈量完成" value={done} color="var(--success)" />
+        <StatCard label="待安排" value={noDate.length} color={noDate.length ? 'var(--danger)' : undefined} />
+        <StatCard label="已排程" value={scheduled.length} color="var(--gold)" />
+        <StatCard label="丈量完成" value={done.length} color="var(--success)" />
       </div>
-      {loading ? <div className="loading"><div className="spinner" /><br />載入中...</div> :
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        {filterBtn(`全部 (${data.length})`, 'all')}
+        {filterBtn(`待安排 (${noDate.length})`, 'nodate', 'var(--danger)')}
+        {filterBtn(`已排程 (${scheduled.length})`, 'scheduled')}
+        {filterBtn(`完成 (${done.length})`, 'done', 'var(--success)')}
+        {selectedDate && <button onClick={() => setSelectedDate(null)} style={{ padding: '5px 11px', borderRadius: 6, border: '1px solid var(--gold)', background: 'var(--gold-dim)', color: 'var(--gold)', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>{fmtD(selectedDate)} ✕</button>}
+      </div>
+      {loading ? <div className="loading"><div className="spinner" /><br />載入中...</div> : <>
+        {view === 'calendar' && <CalendarView data={data} dateField="measure_date" onClickDate={d => { setSelectedDate(d); setFilter('all'); }} />}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {data.length === 0 ? <div className="empty"><div className="icon">📏</div>無待丈量案件</div> :
-            data.map(c => {
+          {filtered.length === 0 ? <div className="empty"><div className="icon">📏</div>無案件</div> :
+            filtered.map(c => {
               const st = CASE_STATUS_COLOR[c.status] || CASE_STATUS_COLOR.new;
               return (
                 <div key={c.id} onClick={() => openDetail(c)} style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 14, border: `1px solid ${!c.measure_date ? 'rgba(239,68,68,.3)' : 'var(--border)'}`, cursor: 'pointer' }}>
@@ -162,7 +252,7 @@ export default function Measurement() {
               );
             })}
         </div>
-      }
+      </>}
 
       {/* Detail Modal */}
       <Modal open={modal.open} onClose={() => setModal({ open: false, data: null })}
