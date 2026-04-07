@@ -33,6 +33,7 @@ const PaymentTracking = lazy(() => import('./pages/PaymentTracking'));
 const Finance = lazy(() => import('./pages/Finance'));
 const Accessories = lazy(() => import('./pages/Accessories'));
 const Staff = lazy(() => import('./pages/Staff'));
+const AIPrompt = lazy(() => import('./pages/AIPrompt'));
 
 const TITLES = {
   '/': '儀表板', '/bossview': '老闆視角', '/members': '會員管理',
@@ -42,6 +43,7 @@ const TITLES = {
   '/ordering': '下單追蹤', '/salesorder': '業務下單', '/internalorder': '內勤下單',
   '/chinafactory': '大陸工廠', '/twfactory': '台灣工廠', '/installation': '安裝排程',
   '/payment': '收款追蹤', '/finance': '財務管理', '/accessories': '五金配件', '/staff': '員工帳號',
+  '/aiprompt': 'AI 提示詞管理',
 };
 
 function PageLoader() {
@@ -103,6 +105,7 @@ function AppContent() {
                 <Route path="/finance" element={<Guard perm="finance"><Finance /></Guard>} />
                 <Route path="/accessories" element={<Accessories />} />
                 <Route path="/staff" element={<Guard adminOnly><Staff /></Guard>} />
+                <Route path="/aiprompt" element={<AIPrompt />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
