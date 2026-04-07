@@ -148,8 +148,8 @@
       overflow: hidden;
     }
     .sidebar-brand { padding: 28px 24px 20px; flex-shrink: 0; }
-    .sidebar-brand-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-    .sidebar-brand-logo img { height: 32px; object-fit: contain; }
+    .sidebar-brand-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .sidebar-brand-logo img { width: 100%; max-width: 180px; height: auto; object-fit: contain; }
     .sidebar-brand-name { font-family: var(--font-heading); font-size: 16px; font-weight: 700; color: var(--gold); letter-spacing: 1px; text-transform: uppercase; }
     .sidebar-brand-sub { font-size: 9px; color: var(--text-muted); letter-spacing: 3px; text-transform: uppercase; margin-top: 2px; }
     .sidebar-nav { flex: 1; padding: 16px 12px; overflow-y: auto; }

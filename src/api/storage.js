@@ -15,7 +15,7 @@ export async function uploadFile(bucket, filePath, file) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      token: PROXY_TOKEN,
+      token: sessionStorage.getItem('dw_token') || PROXY_TOKEN,
       bucket,
       filePath,
       fileBase64: base64,
