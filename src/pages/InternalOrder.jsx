@@ -467,7 +467,7 @@ export default function InternalOrder() {
                           <select value={row.factory} onChange={e => updateFactoryRow(c.id, idx, 'factory', e.target.value)} style={selS}><option value="">廠商</option><option value="cn">陸廠</option><option value="tw">台廠</option></select>
                           <select value={row.proc} onChange={e => updateFactoryRow(c.id, idx, 'proc', e.target.value)} style={selS}>{PROC_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select>
                           <select value={row.ship} onChange={e => updateFactoryRow(c.id, idx, 'ship', e.target.value)} style={selS}><option value="sea">海運</option><option value="air">空運</option></select>
-                          <input type="number" value={row.qty} min="1" onChange={e => updateFactoryRow(c.id, idx, 'qty', Number(e.target.value))} style={{ ...selS, width: 35 }} />
+                          <label style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 2 }}><span style={{ color: 'var(--text-muted)' }}>數量</span><input type="number" value={row.qty} min="1" onChange={e => updateFactoryRow(c.id, idx, 'qty', Number(e.target.value))} style={{ ...selS, width: 35 }} /></label>
                           <label style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 1 }}><input type="checkbox" checked={row.wide} onChange={e => updateFactoryRow(c.id, idx, 'wide', e.target.checked)} style={{ width: 11, height: 11 }} />超寬</label>
                           <button onClick={() => removeFactoryRow(c.id, idx)} style={{ border: 'none', background: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                         </div>
