@@ -165,14 +165,18 @@ export default function SalesOrder() {
       {rejected.length > 0 && (
         <div style={{ background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 'var(--radius)', padding: '14px 18px', marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)', marginBottom: 8 }}>⚠ 有 {rejected.length} 件被內勤退回，請補齊資料</div>
-          {rejected.map(c => (
-            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid rgba(239,68,68,.15)' }}>
-              <strong style={{ fontFamily: 'monospace', fontSize: 11 }}>{c.formal_quote_no || c.case_no || '—'}</strong>
-              <span style={{ fontWeight: 600, fontSize: 12 }}>{c.customer_name || ''}</span>
-              <span style={{ color: 'var(--danger)', fontSize: 12, flex: 1 }}>退回原因：{c.rejected_reason}</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{c.rejected_by || ''} {fmtD(c.rejected_at)}</span>
-            </div>
-          ))}
+          {rejected.map(c => {
+            const historyCount = Array.isArray(c.rejection_history) ? c.rejection_history.length : 0;
+            return (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid rgba(239,68,68,.15)', flexWrap: 'wrap' }}>
+                <strong style={{ fontFamily: 'monospace', fontSize: 11 }}>{c.formal_quote_no || c.case_no || '—'}</strong>
+                <span style={{ fontWeight: 600, fontSize: 12 }}>{c.customer_name || ''}</span>
+                <span style={{ color: 'var(--danger)', fontSize: 12, flex: 1 }}>退回原因：{c.rejected_reason}</span>
+                {historyCount > 1 && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: 'rgba(239,68,68,.15)', color: 'var(--danger)', fontWeight: 700 }}>第 {historyCount} 次退回</span>}
+                <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{c.rejected_by || ''} {fmtD(c.rejected_at)}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -202,13 +206,17 @@ export default function SalesOrder() {
                 const bgC = isRejected ? 'rgba(239,68,68,.08)' : 'var(--surface-low)';
                 return (
                   <div key={c.id} style={{ border: `1px solid ${borderC}`, borderRadius: 'var(--radius)', overflow: 'hidden', background: bgC }}>
-                    {isRejected && (
-                      <div style={{ padding: '8px 18px', background: 'rgba(239,68,68,.12)', borderBottom: '1px solid rgba(239,68,68,.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)' }}>⚠ 被內勤退回</span>
-                        <span style={{ fontSize: 12, color: 'var(--danger)' }}>{c.rejected_reason}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>{c.rejected_by || ''} {fmtD(c.rejected_at)}</span>
-                      </div>
-                    )}
+                    {isRejected && (() => {
+                      const hCount = Array.isArray(c.rejection_history) ? c.rejection_history.length : 0;
+                      return (
+                        <div style={{ padding: '8px 18px', background: 'rgba(239,68,68,.12)', borderBottom: '1px solid rgba(239,68,68,.2)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)' }}>⚠ 被內勤退回</span>
+                          {hCount > 1 && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: 'rgba(239,68,68,.2)', color: 'var(--danger)', fontWeight: 700 }}>第 {hCount} 次</span>}
+                          <span style={{ fontSize: 12, color: 'var(--danger)' }}>{c.rejected_reason}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>{c.rejected_by || ''} {fmtD(c.rejected_at)}</span>
+                        </div>
+                      );
+                    })()}
                     <div style={{ padding: '14px 18px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
                         <strong style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.formal_quote_no || c.order_no || c.case_no || '—'}</strong>

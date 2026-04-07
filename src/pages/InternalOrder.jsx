@@ -5,6 +5,15 @@ import { useToast } from '../components/UI/Toast';
 import { useConfirm } from '../components/UI/Confirm';
 import { useAuth } from '../contexts/AuthContext';
 import StatCard from '../components/UI/StatCard';
+import Modal from '../components/UI/Modal';
+
+const REJECT_REASONS = [
+  { value: 'incomplete_data', label: '資料不齊全' },
+  { value: 'size_issue', label: '尺寸無法施工' },
+  { value: 'customer_error', label: '客戶資料有誤' },
+  { value: 'product_discontinued', label: '產品停產' },
+  { value: 'other', label: '其他' }
+];
 
 const PROC_TYPES = [
   { value: 'plain', label: '純板', days: 0 },
@@ -39,6 +48,9 @@ export default function InternalOrder() {
   const [singleForm, setSingleForm] = useState({}); // caseId -> { factory, proc, ship, wide }
   const [prodRecords, setProdRecords] = useState({}); // caseId -> production[] (for done orders)
   const [rejectedCount, setRejectedCount] = useState(0);
+  const [rejectModal, setRejectModal] = useState({ open: false, caseId: null, caseName: '', hasProd: false });
+  const [rejectForm, setRejectForm] = useState({ reason: 'incomplete_data', note: '' });
+  const [rejecting, setRejecting] = useState(false);
   const toast = useToast();
   const confirmDialog = useConfirm();
   const { user } = useAuth();
@@ -203,36 +215,71 @@ export default function InternalOrder() {
     });
   }
 
-  async function ioReject(caseId) {
-    const reason = window.prompt('請輸入退回原因（業務端會看到此備註）：');
-    if (!reason?.trim()) return;
+  function openRejectModal(caseId) {
+    const c = data.find(x => x.id === caseId);
+    const hasProd = !!(c?.internal_order_date);
+    setRejectForm({ reason: 'incomplete_data', note: '' });
+    setRejectModal({ open: true, caseId, caseName: c?.customer_name || c?.case_no || '', hasProd });
+  }
+
+  async function submitReject() {
+    const { caseId, hasProd } = rejectModal;
+    const reasonLabel = (REJECT_REASONS.find(r => r.value === rejectForm.reason) || {}).label || rejectForm.reason;
+    const fullReason = reasonLabel + (rejectForm.note ? '：' + rejectForm.note : '');
+
+    setRejecting(true);
     try {
+      // Get current case to read rejection_history
+      const caseArr = await sbFetch(`cases?id=eq.${caseId}&select=rejection_history`);
+      const history = Array.isArray(caseArr?.[0]?.rejection_history) ? caseArr[0].rejection_history : [];
+      history.push({
+        reason: rejectForm.reason,
+        reason_label: reasonLabel,
+        note: rejectForm.note || '',
+        rejected_by: user?.display_name || '內勤',
+        rejected_at: new Date().toISOString()
+      });
+
+      // Clear all order settings + write rejection info
       await sbFetch(`cases?id=eq.${caseId}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          sales_order_date: null, rejected_reason: reason.trim(),
-          rejected_at: new Date().toISOString(), rejected_by: user?.display_name || '內勤',
+          sales_order_date: null,
+          internal_order_date: null,
+          factory_type: null,
+          processing_type: null,
+          shipping_method: null,
+          factory_confirmed_date: null,
+          is_overwidth: false,
+          estimated_arrival: null,
+          tw_secondary_date: null,
+          tw_secondary_done: null,
+          rejected_reason: fullReason,
+          rejected_at: new Date().toISOString(),
+          rejected_by: user?.display_name || '內勤',
+          rejection_history: history,
           updated_at: new Date().toISOString()
         })
       });
-      toast('已退回業務', 'success'); load();
-    } catch (e) { toast('退回失敗: ' + e.message, 'error'); }
-  }
 
-  async function ioRejectDone(caseId) {
-    const reason = window.prompt('此案件已下單給廠商，確定要退回業務嗎？\n請輸入退回原因：');
-    if (!reason?.trim()) return;
-    try {
-      await sbFetch(`cases?id=eq.${caseId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          sales_order_date: null, internal_order_date: null, factory_confirmed_date: null,
-          rejected_reason: reason.trim(), rejected_at: new Date().toISOString(),
-          rejected_by: user?.display_name || '內勤', updated_at: new Date().toISOString()
-        })
-      });
-      toast('已退回業務', 'success'); load();
+      // If already ordered to factory, mark production records as cancelled
+      if (hasProd) {
+        const prods = prodRecords[caseId] || [];
+        for (const p of prods) {
+          if (p.production_status !== 'cancelled') {
+            await sbFetch(`production?id=eq.${p.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ production_status: 'cancelled', production_note: (p.production_note || '') + ' [退回取消]', updated_at: new Date().toISOString() })
+            });
+          }
+        }
+      }
+
+      toast('已退回業務', 'success');
+      setRejectModal({ open: false, caseId: null, caseName: '', hasProd: false });
+      load();
     } catch (e) { toast('退回失敗: ' + e.message, 'error'); }
+    setRejecting(false);
   }
 
   // CSV download for single case
@@ -473,7 +520,7 @@ export default function InternalOrder() {
               actionBtns.push(<button key="csv" className="btn btn-ghost btn-sm" onClick={() => downloadCaseCSV(c.id)} style={{ ...btnS, borderColor: 'var(--gold)', color: 'var(--gold)' }} title="CSV">CSV</button>);
               if (isPending) {
                 actionBtns.push(<button key="submit" className="btn btn-primary btn-sm" onClick={() => ioSubmit(c.id)} style={{ ...btnS, background: '#10b981', borderColor: '#10b981' }}>確認下單</button>);
-                actionBtns.push(<button key="reject" className="btn btn-danger btn-sm" onClick={() => ioReject(c.id)} style={btnS}>退回業務</button>);
+                actionBtns.push(<button key="reject" className="btn btn-danger btn-sm" onClick={() => openRejectModal(c.id)} style={btnS}>退回業務</button>);
               } else {
                 if (c.factory_type === 'tw' && !c.factory_confirmed_date) {
                   actionBtns.push(<button key="confirm" className="btn btn-ghost btn-sm" onClick={() => ioConfirmFactory(c.id)} style={btnS}>確認回簽</button>);
@@ -488,7 +535,7 @@ export default function InternalOrder() {
                 if (canAdvance) {
                   actionBtns.push(<button key="advance" className="btn btn-ghost btn-sm" onClick={() => ioAdvance(c.id)} style={{ ...btnS, borderColor: 'var(--gold)', color: 'var(--gold)' }}>進入生產→</button>);
                 }
-                actionBtns.push(<button key="rejectdone" className="btn btn-danger btn-sm" onClick={() => ioRejectDone(c.id)} style={btnS}>退回業務</button>);
+                actionBtns.push(<button key="rejectdone" className="btn btn-danger btn-sm" onClick={() => openRejectModal(c.id)} style={btnS}>退回業務</button>);
               }
 
               return (
@@ -513,6 +560,34 @@ export default function InternalOrder() {
           </tbody>
         </table>
       </div>
+
+      {/* Reject Modal */}
+      <Modal open={rejectModal.open} onClose={() => !rejecting && setRejectModal({ open: false, caseId: null, caseName: '', hasProd: false })} title="退回業務" maxWidth={480}
+        footer={<>
+          <button className="btn btn-ghost" disabled={rejecting} onClick={() => setRejectModal({ open: false, caseId: null, caseName: '', hasProd: false })}>取消</button>
+          <button className="btn btn-danger" disabled={rejecting} onClick={submitReject}>{rejecting ? '退回中...' : '確認退回'}</button>
+        </>}>
+        <div style={{ marginBottom: 12 }}>
+          <span style={{ fontSize: 13 }}>案件：</span>
+          <strong>{rejectModal.caseName}</strong>
+          {rejectModal.hasProd && <span style={{ color: 'var(--danger)', fontSize: 11, marginLeft: 8 }}>（已下單給工廠，退回後工廠單將被取消）</span>}
+        </div>
+        <div className="form-grid" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
+          <div className="form-group">
+            <label>退回原因</label>
+            <select value={rejectForm.reason} onChange={e => setRejectForm(f => ({ ...f, reason: e.target.value }))}
+              style={{ padding: '9px 32px 9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)', width: '100%' }}>
+              {REJECT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>備註說明</label>
+            <textarea value={rejectForm.note} onChange={e => setRejectForm(f => ({ ...f, note: e.target.value }))}
+              placeholder="補充說明退回原因（業務端會看到）"
+              style={{ padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)', minHeight: 80, resize: 'vertical', width: '100%' }} />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
