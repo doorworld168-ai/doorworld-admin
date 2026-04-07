@@ -48,6 +48,7 @@ export default function ChinaFactory() {
   const [editValue, setEditValue] = useState('');
   const [editModal, setEditModal] = useState({ open: false, data: null });
   const [editForm, setEditForm] = useState({});
+  const [advanceInput, setAdvanceInput] = useState({}); // {caseId: 'input value'}
   const toast = useToast();
 
   async function load() {
@@ -117,14 +118,46 @@ export default function ChinaFactory() {
     } catch (e) { toast('儲存失敗: ' + e.message, 'error'); }
   }
 
-  // Step bar component
+  // Advance to next stage
+  async function advanceStage(caseId, nextField, inputVal) {
+    if (!inputVal || !inputVal.trim()) { toast('請輸入內容（日期或備註）才能推進', 'error'); return; }
+    const c = data.find(x => x.id === caseId);
+    const updated = { ...c, [nextField]: inputVal.trim() };
+    const body = { [nextField]: inputVal.trim(), cn_status: cnAutoStatus(updated), updated_at: new Date().toISOString() };
+    try {
+      await sbFetch(`cases?id=eq.${caseId}`, { method: 'PATCH', body: JSON.stringify(body) });
+      toast('已推進', 'success');
+      setAdvanceInput(prev => ({ ...prev, [caseId]: '' }));
+      load();
+    } catch (e) { toast('推進失敗: ' + e.message, 'error'); }
+  }
+
+  // Retreat to previous stage
+  async function retreatStage(caseId, currentField) {
+    const c = data.find(x => x.id === caseId);
+    const updated = { ...c, [currentField]: null };
+    const body = { [currentField]: null, cn_status: cnAutoStatus(updated), updated_at: new Date().toISOString() };
+    try {
+      await sbFetch(`cases?id=eq.${caseId}`, { method: 'PATCH', body: JSON.stringify(body) });
+      toast('已退回', 'success');
+      load();
+    } catch (e) { toast('退回失敗: ' + e.message, 'error'); }
+  }
+
+  // Step bar component with advance/retreat
   function StepBar({ c }) {
     let completedIdx = -1;
     for (let i = CN_STAGES.length - 1; i >= 0; i--) {
       if (c[CN_STAGES[i].field]) { completedIdx = i; break; }
     }
+    const nextIdx = completedIdx + 1;
+    const nextStage = nextIdx < CN_STAGES.length ? CN_STAGES[nextIdx] : null;
+    const currentStage = completedIdx >= 0 ? CN_STAGES[completedIdx] : null;
+    const inputVal = advanceInput[c.id] || '';
+
     return (
       <div>
+        {/* Progress dots */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 0, minWidth: 220 }}>
           {CN_STAGES.map((s, idx) => {
             const val = c[s.field] || '';
@@ -137,15 +170,11 @@ export default function ChinaFactory() {
             return (
               <div key={s.field} style={{ display: 'contents' }}>
                 {idx > 0 && <div style={{ flex: 1, height: 2, background: lineColor, minWidth: 8 }} />}
-                <div
-                  title={tooltip}
-                  onClick={e => { e.stopPropagation(); startEditCell(c.id, s.field, val); }}
-                  style={{
-                    width: 14, height: 14, borderRadius: '50%', background: dotColor,
-                    border: `2px solid ${dotBorder}`, cursor: 'pointer', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}
-                >
+                <div title={tooltip} style={{
+                  width: 14, height: 14, borderRadius: '50%', background: dotColor,
+                  border: `2px solid ${dotBorder}`, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
                   {done && <span style={{ color: '#fff', fontSize: 8, fontWeight: 900 }}>✓</span>}
                 </div>
               </div>
@@ -155,6 +184,38 @@ export default function ChinaFactory() {
         <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 3, textAlign: 'center' }}>
           {completedIdx >= 0 ? CN_STAGES[completedIdx].label : '未開始'}
         </div>
+        {/* Advance/Retreat controls */}
+        {nextStage && (
+          <div style={{ marginTop: 6, display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+            {currentStage && (
+              <button onClick={() => retreatStage(c.id, currentStage.field)}
+                style={{ fontSize: 9, padding: '2px 6px', border: '1px solid var(--text-muted)', borderRadius: 4, background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                ← {currentStage.short}
+              </button>
+            )}
+            <input
+              value={inputVal}
+              onChange={e => setAdvanceInput(prev => ({ ...prev, [c.id]: e.target.value }))}
+              placeholder={nextStage.label}
+              style={{ flex: 1, minWidth: 80, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text)', fontSize: 10, fontFamily: 'var(--font-body)' }}
+              onKeyDown={e => { if (e.key === 'Enter') advanceStage(c.id, nextStage.field, inputVal); }}
+            />
+            <button
+              onClick={() => advanceStage(c.id, nextStage.field, inputVal)}
+              disabled={!inputVal.trim()}
+              style={{ fontSize: 9, padding: '2px 8px', border: '1px solid var(--gold)', borderRadius: 4, background: inputVal.trim() ? 'var(--gold-dim)' : 'none', color: inputVal.trim() ? 'var(--gold)' : 'var(--text-muted)', cursor: inputVal.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
+              {nextStage.short} →
+            </button>
+          </div>
+        )}
+        {!nextStage && completedIdx === CN_STAGES.length - 1 && currentStage && (
+          <div style={{ marginTop: 6 }}>
+            <button onClick={() => retreatStage(c.id, currentStage.field)}
+              style={{ fontSize: 9, padding: '2px 6px', border: '1px solid var(--text-muted)', borderRadius: 4, background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              ← 退回 {currentStage.short}
+            </button>
+          </div>
+        )}
       </div>
     );
   }

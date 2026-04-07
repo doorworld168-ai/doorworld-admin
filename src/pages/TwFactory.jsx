@@ -186,14 +186,20 @@ export default function TwFactory() {
                 {/* Actions */}
                 {p.production_status !== 'cancelled' && (
                   <div style={{ padding: '6px 16px 10px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {stepIdx > 0 && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => confirm('確認退回？', `將狀態從「${st.label}」退回「${(STATUS_MAP[STEPS[stepIdx - 1]] || {}).label}」`, () => updateStatus(p.id, STEPS[stepIdx - 1]))}
+                        style={{ fontSize: 10, borderColor: 'var(--text-muted)', color: 'var(--text-muted)' }}>
+                        ← {(STATUS_MAP[STEPS[stepIdx - 1]] || {}).label}
+                      </button>
+                    )}
                     {stepIdx < STEPS.length - 1 && stepIdx >= 0 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => updateStatus(p.id, STEPS[stepIdx + 1])}
+                      <button className="btn btn-ghost btn-sm" onClick={() => confirm('確認推進？', `將狀態推進到「${(STATUS_MAP[STEPS[stepIdx + 1]] || {}).label}」`, () => updateStatus(p.id, STEPS[stepIdx + 1]))}
                         style={{ fontSize: 10, borderColor: 'var(--gold)', color: 'var(--gold)' }}>
                         推進 → {(STATUS_MAP[STEPS[stepIdx + 1]] || {}).label}
                       </button>
                     )}
                     {p.production_status !== 'shipped' && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => markShipped(p.id)}
+                      <button className="btn btn-ghost btn-sm" onClick={() => confirm('確認出貨？', '將此工單標記為已出貨', () => markShipped(p.id))}
                         style={{ fontSize: 10, borderColor: 'var(--success)', color: 'var(--success)' }}>
                         標記出貨
                       </button>
