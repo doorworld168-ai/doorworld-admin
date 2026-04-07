@@ -47,6 +47,7 @@ export default function Dashboard() {
     try {
       const data = await sbFetch('cases?select=*&status=not.in.(completed,cancelled)&order=created_at.desc&limit=200');
       setCases(data || []);
+      clearTimeout(chartTimer.current);
       chartTimer.current = setTimeout(() => renderCharts(data || []), 100);
     } catch (e) { toast(e.message, 'error'); }
     setLoading(false);

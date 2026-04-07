@@ -155,9 +155,11 @@ export default function Staff() {
 
   function del(s) {
     confirm('確認刪除？', `員工 ${s.display_name} 將永久刪除。`, async () => {
-      await sbFetch(`staff?id=eq.${s.id}`, { method: 'DELETE' });
-      toast('已刪除', 'success');
-      load();
+      try {
+        await sbFetch(`staff?id=eq.${s.id}`, { method: 'DELETE' });
+        toast('已刪除', 'success');
+        load();
+      } catch (e) { toast(e.message, 'error'); }
     });
   }
 

@@ -1,5 +1,5 @@
-const N8N_PROXY_URL = "https://17310a3-1.zeabur.app/webhook/admin-api";
-const PROXY_TOKEN = "dw-admin-2025-proxy";
+const N8N_PROXY_URL = `${import.meta.env.VITE_N8N_BASE_URL}/webhook/admin-api`;
+const PROXY_TOKEN = import.meta.env.VITE_PROXY_TOKEN;
 
 export async function sbFetch(path, opts = {}) {
   const method = opts.method || 'GET';

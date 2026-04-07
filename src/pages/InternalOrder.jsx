@@ -36,6 +36,7 @@ export default function InternalOrder() {
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [factoryRows, setFactoryRows] = useState({}); // caseId -> rows
+  const [singleForm, setSingleForm] = useState({}); // caseId -> { factory, proc, ship, wide }
   const [rejectedCount, setRejectedCount] = useState(0);
   const toast = useToast();
   const confirmDialog = useConfirm();
@@ -86,15 +87,12 @@ export default function InternalOrder() {
     const isFire = caseData?.is_fireproof;
 
     if (rows.length === 0) {
-      // Single mode
-      const factoryEl = document.getElementById(`io-factory-${caseId}`);
-      const procEl = document.getElementById(`io-proc-${caseId}`);
-      const shipEl = document.getElementById(`io-ship-${caseId}`);
-      const wideEl = document.getElementById(`io-wide-${caseId}`);
-      const factory = factoryEl?.value || '';
-      const proc = procEl?.value || 'emboss';
-      const ship = shipEl?.value || 'sea';
-      const wide = wideEl?.checked || false;
+      // Single mode — read from React state
+      const sf = singleForm[caseId] || {};
+      const factory = sf.factory || '';
+      const proc = sf.proc || 'emboss';
+      const ship = sf.ship || 'sea';
+      const wide = sf.wide || false;
       if (!factory) { toast('請選擇廠商', 'error'); return; }
       rows = [{ factory, proc, ship, wide, part: '整樘門', qty: caseData?.quantity || 1 }];
     } else {
@@ -117,8 +115,36 @@ export default function InternalOrder() {
           est.setDate(est.getDate() + procDays + shipDays + twDays);
           const estStr = est.toISOString().slice(0, 10);
           if (estStr > latestArrival) latestArrival = estStr;
-          // Factory order info stored on case itself
         }
+
+        // Create production records for each factory row
+        for (const r of rows) {
+          const procObj = PROC_TYPES.find(p => p.value === r.proc);
+          let procDays = procObj ? procObj.days : 0;
+          if (r.wide) procDays += 10;
+          const shipObj = SHIP_METHODS.find(s => s.value === r.ship);
+          const shipDays = shipObj ? shipObj.days : 16;
+          const twDays = (isFire && r.factory === 'cn') ? 7 : 0;
+          const est = new Date(today);
+          est.setDate(est.getDate() + procDays + shipDays + twDays);
+
+          await sbFetch('production', {
+            method: 'POST',
+            headers: { 'Prefer': 'return=minimal' },
+            body: JSON.stringify({
+              case_id: caseId,
+              case_no: caseData?.case_no || '',
+              factory_code: r.factory === 'tw' ? 'TW' : 'ZY',
+              production_order_no: '',
+              production_status: 'pending',
+              production_note: `${r.part || '整樘門'} / ${(procObj || {}).label || ''} / ${(SHIP_METHODS.find(s => s.value === r.ship) || {}).label || ''} ${r.wide ? '/ 超寬' : ''}`.trim(),
+              order_person: user?.display_name || '',
+              estimated_arrival: est.toISOString().slice(0, 10)
+            })
+          });
+        }
+
+        // Update case with primary factory info + latest arrival
         const firstRow = rows[0];
         await sbFetch(`cases?id=eq.${caseId}`, {
           method: 'PATCH',
@@ -130,6 +156,7 @@ export default function InternalOrder() {
           })
         });
         setFactoryRows(prev => { const next = { ...prev }; delete next[caseId]; return next; });
+        setSingleForm(prev => { const next = { ...prev }; delete next[caseId]; return next; });
         toast(`已下單 ${rows.length} 筆工廠單`, 'success');
         load();
       } catch (e) { toast('操作失敗: ' + e.message, 'error'); }
@@ -369,10 +396,10 @@ export default function InternalOrder() {
                   factoryCell = (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select id={`io-factory-${c.id}`} style={selS}><option value="">廠商</option><option value="cn">陸廠</option><option value="tw">台廠</option></select>
-                        <select id={`io-proc-${c.id}`} style={selS}>{PROC_TYPES.map(p => <option key={p.value} value={p.value}>{p.label} ({p.days}天)</option>)}</select>
-                        <select id={`io-ship-${c.id}`} style={selS}>{SHIP_METHODS.map(s => <option key={s.value} value={s.value}>{s.label} ({s.days}天)</option>)}</select>
-                        <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 2 }}><input type="checkbox" id={`io-wide-${c.id}`} style={{ width: 12, height: 12 }} />超寬</label>
+                        <select value={(singleForm[c.id] || {}).factory || ''} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], factory: e.target.value } }))} style={selS}><option value="">廠商</option><option value="cn">陸廠</option><option value="tw">台廠</option></select>
+                        <select value={(singleForm[c.id] || {}).proc || 'emboss'} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], proc: e.target.value } }))} style={selS}>{PROC_TYPES.map(p => <option key={p.value} value={p.value}>{p.label} ({p.days}天)</option>)}</select>
+                        <select value={(singleForm[c.id] || {}).ship || 'sea'} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], ship: e.target.value } }))} style={selS}>{SHIP_METHODS.map(s => <option key={s.value} value={s.value}>{s.label} ({s.days}天)</option>)}</select>
+                        <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 2 }}><input type="checkbox" checked={(singleForm[c.id] || {}).wide || false} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], wide: e.target.checked } }))} style={{ width: 12, height: 12 }} />超寬</label>
                       </div>
                       <button className="btn btn-ghost btn-sm" onClick={() => addFactoryRow(c.id)} style={{ fontSize: 10, padding: '2px 6px', color: '#3b82f6', borderColor: '#3b82f6', alignSelf: 'flex-start' }}>+ 多廠下單</button>
                     </div>

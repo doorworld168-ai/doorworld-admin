@@ -1,7 +1,7 @@
 // Supabase storage upload via n8n proxy — no key exposed in frontend
-const N8N_UPLOAD_URL = "https://17310a3-1.zeabur.app/webhook/admin-upload";
-const PROXY_TOKEN = "dw-admin-2025-proxy";
-const SB_PUBLIC_URL = "https://zklwnhxrqxspmjovohvt.supabase.co/storage/v1/object/public";
+const N8N_UPLOAD_URL = `${import.meta.env.VITE_N8N_BASE_URL}/webhook/admin-upload`;
+const PROXY_TOKEN = import.meta.env.VITE_PROXY_TOKEN;
+const SB_PUBLIC_URL = import.meta.env.VITE_SUPABASE_PUBLIC_URL;
 
 export async function uploadFile(bucket, filePath, file) {
   // Convert file to base64 and send through n8n proxy

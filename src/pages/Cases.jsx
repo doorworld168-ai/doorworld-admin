@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
 import { fmtDate, fmtPrice, CASE_STATUS_LABEL, CASE_STATUS_COLOR, CASE_STEPS, CTYPE_SHORT, DOOR_TYPE_LABEL, calcDelay, downloadCSV } from '../api/utils';
+import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../components/UI/Toast';
 import { useConfirm } from '../components/UI/Confirm';
 import { useAuth } from '../contexts/AuthContext';
@@ -41,6 +42,7 @@ export default function Cases() {
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useAuth();
+  const debouncedSearch = useDebounce(search);
 
   // Persist filters on change
   useEffect(() => {
@@ -50,7 +52,7 @@ export default function Cases() {
   const load = useCallback(async () => {
     setLoading(true);
     let path = 'cases?select=*&order=created_at.desc';
-    if (search) path += `&or=(case_no.ilike.*${encodeURIComponent(search)}*,customer_name.ilike.*${encodeURIComponent(search)}*,order_no.ilike.*${encodeURIComponent(search)}*)`;
+    if (debouncedSearch) path += `&or=(case_no.ilike.*${encodeURIComponent(debouncedSearch)}*,customer_name.ilike.*${encodeURIComponent(debouncedSearch)}*,order_no.ilike.*${encodeURIComponent(debouncedSearch)}*)`;
     if (statusFilter) path += `&status=eq.${statusFilter}`;
     if (dateFrom) path += `&created_at=gte.${dateFrom}`;
     if (dateTo) path += `&created_at=lte.${dateTo}T23:59:59`;
@@ -76,7 +78,7 @@ export default function Cases() {
     } catch (e) { toast(e.message, 'error'); }
     setLoading(false);
     setSelected(new Set());
-  }, [search, statusFilter, dateFrom, dateTo, mineOnly, page, pageSize, user, toast]);
+  }, [debouncedSearch, statusFilter, dateFrom, dateTo, mineOnly, page, pageSize, user, toast]);
 
   // Keyboard shortcut: `/` to focus search
   useEffect(() => {
@@ -164,10 +166,12 @@ export default function Cases() {
 
   async function deleteCase() {
     confirm('確定刪除？', `案件 ${form.case_no} 將永久刪除。`, async () => {
-      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'DELETE' });
-      toast('已刪除', 'success');
-      setModal({ open: false, data: null });
-      load();
+      try {
+        await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'DELETE' });
+        toast('已刪除', 'success');
+        setModal({ open: false, data: null });
+        load();
+      } catch (e) { toast(e.message, 'error'); }
     });
   }
 

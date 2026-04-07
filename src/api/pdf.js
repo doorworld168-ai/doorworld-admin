@@ -19,7 +19,7 @@ function fmtDate(str) {
   const d = str ? new Date(str) : new Date();
   return d.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
 }
-function esc(s) { return String(s == null ? '' : s).replace(/[<>&"]/g, m => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[m])); }
+function esc(s) { return String(s == null ? '' : s).replace(/[<>&"']/g, m => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[m])); }
 
 /**
  * Open a formal quote PDF (報價單) in a new window with print dialog

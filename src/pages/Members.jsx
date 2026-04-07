@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
 import { fmtDate, fmtPrice, downloadCSV } from '../api/utils';
+import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../components/UI/Toast';
 import { useConfirm } from '../components/UI/Confirm';
 import Modal from '../components/UI/Modal';
@@ -25,6 +26,7 @@ export default function Members() {
   const [lightbox, setLightbox] = useState('');
   const toast = useToast();
   const confirm = useConfirm();
+  const debouncedSearch = useDebounce(search);
 
   useEffect(() => {
     sessionStorage.setItem(SS_KEY, JSON.stringify({ search, filterMode, pageSize }));
@@ -33,7 +35,7 @@ export default function Members() {
   const load = useCallback(async () => {
     setLoading(true);
     let path = 'members?select=*,quotes(id)&order=created_at.desc';
-    if (search) path += `&or=(display_name.ilike.*${encodeURIComponent(search)}*,phone.ilike.*${encodeURIComponent(search)}*)`;
+    if (debouncedSearch) path += `&or=(display_name.ilike.*${encodeURIComponent(debouncedSearch)}*,phone.ilike.*${encodeURIComponent(debouncedSearch)}*)`;
     if (filterMode === 'need_contact') path += '&need_contact=eq.true';
     if (filterMode === 'manual') path += '&manual_mode=eq.true';
     try {
@@ -49,7 +51,7 @@ export default function Members() {
       setStats({ total: all, month: mo, contact, manual });
     } catch (e) { toast(e.message, 'error'); }
     setLoading(false);
-  }, [search, filterMode, page, pageSize, toast]);
+  }, [debouncedSearch, filterMode, page, pageSize, toast]);
 
   useEffect(() => { load(); }, [load]);
 

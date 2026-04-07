@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
 import { fmtDate, fmtPrice, DOOR_TYPE_LABEL, PAGE_SIZE } from '../api/utils';
+import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../components/UI/Toast';
 import { useConfirm } from '../components/UI/Confirm';
 import { useAuth } from '../contexts/AuthContext';
@@ -36,6 +37,7 @@ export default function Quotes() {
   const confirm = useConfirm();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const debouncedSearch = useDebounce(search);
 
   // Load TW districts
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function Quotes() {
   const load = useCallback(async () => {
     setLoading(true);
     let path = 'quotes?select=*&order=created_at.desc';
-    if (search) path += `&or=(quote_no.ilike.*${encodeURIComponent(search)}*,customer_name.ilike.*${encodeURIComponent(search)}*)`;
+    if (debouncedSearch) path += `&or=(quote_no.ilike.*${encodeURIComponent(debouncedSearch)}*,customer_name.ilike.*${encodeURIComponent(debouncedSearch)}*)`;
     if (statusFilter) path += `&status=eq.${statusFilter}`;
     try {
       setTotal(await proxyCount(path.replace('select=*', 'select=id')));
@@ -64,7 +66,7 @@ export default function Quotes() {
       setStats({ total: all, month: mo, confirmed: conf });
     } catch (e) { toast(e.message, 'error'); }
     setLoading(false);
-  }, [search, statusFilter, page, toast]);
+  }, [debouncedSearch, statusFilter, page, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -116,10 +118,12 @@ export default function Quotes() {
 
   async function deleteQuote(q) {
     confirm('確認刪除？', `估價單 ${q.quote_no} 將永久刪除。`, async () => {
-      await sbFetch(`quotes?id=eq.${q.id}`, { method: 'DELETE' });
-      toast('已刪除', 'success');
-      setModal({ open: false, data: null });
-      load();
+      try {
+        await sbFetch(`quotes?id=eq.${q.id}`, { method: 'DELETE' });
+        toast('已刪除', 'success');
+        setModal({ open: false, data: null });
+        load();
+      } catch (e) { toast(e.message, 'error'); }
     });
   }
 
@@ -216,7 +220,7 @@ export default function Quotes() {
       <Modal open={modal.open} onClose={() => setModal({ open: false, data: null })} title={`估價單 ${q.quote_no || ''}`} maxWidth={620}
         footer={<>
           <button className="btn btn-ghost" onClick={() => setModal({ open: false, data: null })}>關閉</button>
-          <button className="btn btn-ghost" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }} onClick={() => window.open(`https://17310a3-1.zeabur.app/webhook/quote-pdf?no=${q.quote_no}`, '_blank')}>PDF</button>
+          <button className="btn btn-ghost" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }} onClick={() => window.open(`${import.meta.env.VITE_N8N_BASE_URL}/webhook/quote-pdf?no=${encodeURIComponent(q.quote_no)}`, '_blank')}>PDF</button>
           <button className="btn btn-danger" onClick={() => deleteQuote(q)}>刪除</button>
         </>}>
         {modal.open && <>

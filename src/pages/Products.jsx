@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
 import { fmtPrice, PAGE_SIZE } from '../api/utils';
+import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../components/UI/Toast';
 import { useConfirm } from '../components/UI/Confirm';
 import Modal from '../components/UI/Modal';
@@ -17,18 +18,19 @@ export default function Products() {
   const [lightbox, setLightbox] = useState('');
   const toast = useToast();
   const confirm = useConfirm();
+  const debouncedSearch = useDebounce(search);
 
   const load = useCallback(async () => {
     setLoading(true);
     let path = 'products?select=*&order=series_code.asc,year.asc,seq.asc';
-    if (search) path += `&or=(full_code.ilike.*${encodeURIComponent(search)}*,name.ilike.*${encodeURIComponent(search)}*)`;
+    if (debouncedSearch) path += `&or=(full_code.ilike.*${encodeURIComponent(debouncedSearch)}*,name.ilike.*${encodeURIComponent(debouncedSearch)}*)`;
     if (filterActive !== '') path += `&is_active=eq.${filterActive}`;
     try {
       setTotal(await proxyCount(path.replace('select=*', 'select=id')));
       setRows(await sbFetch(path + `&offset=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`) || []);
     } catch (e) { toast(e.message, 'error'); }
     setLoading(false);
-  }, [search, filterActive, page, toast]);
+  }, [debouncedSearch, filterActive, page, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -57,9 +59,11 @@ export default function Products() {
 
   async function del(p) {
     confirm('確認刪除？', `產品 ${p.full_code} 將永久刪除。`, async () => {
-      await sbFetch(`products?id=eq.${p.id}`, { method: 'DELETE' });
-      toast('已刪除', 'success');
-      load();
+      try {
+        await sbFetch(`products?id=eq.${p.id}`, { method: 'DELETE' });
+        toast('已刪除', 'success');
+        load();
+      } catch (e) { toast(e.message, 'error'); }
     });
   }
 

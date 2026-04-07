@@ -121,8 +121,14 @@ function AppShell() {
   return <AppContent />;
 }
 
+const VALID_ROUTES = Object.keys(TITLES);
 const spaRedirect = sessionStorage.getItem('spa_redirect');
-if (spaRedirect) { sessionStorage.removeItem('spa_redirect'); window.history.replaceState(null, '', import.meta.env.BASE_URL.slice(0, -1) + spaRedirect); }
+if (spaRedirect) {
+  sessionStorage.removeItem('spa_redirect');
+  if (VALID_ROUTES.some(r => spaRedirect === r || spaRedirect.startsWith(r + '/'))) {
+    window.history.replaceState(null, '', import.meta.env.BASE_URL.slice(0, -1) + spaRedirect);
+  }
+}
 
 export default function App() {
   return (

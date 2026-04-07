@@ -60,7 +60,7 @@ export default class ErrorBoundary extends Component {
               borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'Inter, sans-serif'
             }}>回到首頁</button>}
           </div>
-          {!chunkError && (
+          {!chunkError && import.meta.env.DEV && (
             <details style={{ marginTop: 20, color: '#99907b', fontSize: 11, maxWidth: 500 }}>
               <summary style={{ cursor: 'pointer' }}>技術細節</summary>
               <pre style={{ textAlign: 'left', background: '#1c1b1b', padding: 12, borderRadius: 8, marginTop: 8, overflow: 'auto', maxHeight: 200, fontSize: 10 }}>
