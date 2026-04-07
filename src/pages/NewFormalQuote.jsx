@@ -56,6 +56,20 @@ export default function NewFormalQuote() {
   // Checkboxes
   const [reqs, setReqs] = useState({ demolish: false, recycle: false, occupy: false, wet: false, dry: false });
 
+  // Auto-generate next sequence number for this month
+  async function loadNextSeq(region, category, year, month) {
+    try {
+      const prefix = `${region}-${category}-${year}-${month}-`;
+      const existing = await sbFetch(`cases?select=formal_quote_no&formal_quote_no=like.${encodeURIComponent(prefix)}*&order=formal_quote_no.desc&limit=1`);
+      if (existing && existing.length > 0) {
+        const lastNo = existing[0].formal_quote_no;
+        const lastSeq = parseInt(lastNo.split('-').pop()) || 0;
+        return String(lastSeq + 1).padStart(3, '0');
+      }
+      return '001';
+    } catch { return '001'; }
+  }
+
   useEffect(() => {
     fetch(TW_DISTRICTS_URL).then(r => r.json()).then(data => {
       const map = {};
@@ -65,6 +79,8 @@ export default function NewFormalQuote() {
     sbFetch('staff?select=display_name&is_active=eq.true').then(d => setStaffList((d || []).map(s => s.display_name))).catch(() => {});
     sbFetch('quotes?select=*&status=neq.cancelled&order=created_at.desc&limit=100').then(d => setQuotes(d || [])).catch(() => {});
     sbFetch('accessories?select=*&is_active=eq.true&order=category.asc,sort_order.asc').then(d => setAccessories(d || [])).catch(() => {});
+    // Auto seq
+    loadNextSeq(form.region, form.category, form.year, form.month).then(seq => setForm(f => ({ ...f, seq })));
   }, []);
 
   // Calculate totals whenever relevant fields change
@@ -269,10 +285,10 @@ export default function NewFormalQuote() {
           <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>報價單號</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>區域</label><select value={form.region} onChange={e => setForm(f => ({ ...f, region: e.target.value }))} style={inputStyle}><option value="NTPC">NTPC</option><option value="TPE">TPE</option><option value="TYC">TYC</option><option value="HSC">HSC</option></select></div>
-              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>分類</label><select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}><option value="D">D</option><option value="S">S</option><option value="B">B</option><option value="C">C</option></select></div>
-              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>月份</label><input value={form.month} onChange={e => setForm(f => ({ ...f, month: e.target.value }))} style={inputStyle} maxLength={2} /></div>
-              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>序號</label><input value={form.seq} onChange={e => setForm(f => ({ ...f, seq: e.target.value }))} style={inputStyle} /></div>
+              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>區域</label><select value={form.region} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, region: v })); loadNextSeq(v, form.category, form.year, form.month).then(s => setForm(f => ({ ...f, seq: s }))); }} style={inputStyle}><option value="NTPC">NTPC</option><option value="TPE">TPE</option><option value="TYC">TYC</option><option value="HSC">HSC</option></select></div>
+              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>分類</label><select value={form.category} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, category: v })); loadNextSeq(form.region, v, form.year, form.month).then(s => setForm(f => ({ ...f, seq: s }))); }} style={inputStyle}><option value="D">D</option><option value="S">S</option><option value="B">B</option><option value="C">C</option></select></div>
+              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>月份</label><input value={form.month} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, month: v })); if (v.length === 2) loadNextSeq(form.region, form.category, form.year, v).then(s => setForm(f => ({ ...f, seq: s }))); }} style={inputStyle} maxLength={2} /></div>
+              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>序號</label><input value={form.seq} onChange={e => setForm(f => ({ ...f, seq: e.target.value }))} style={inputStyle} readOnly title="自動產生，每月從 001 開始" /></div>
             </div>
             <div style={{ marginTop: 6, fontSize: 12, color: 'var(--gold)', fontFamily: 'monospace' }}>{form.region}-{form.category}-{form.year}-{form.month}-{form.seq || '001'}</div>
           </div>

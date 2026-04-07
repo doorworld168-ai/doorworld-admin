@@ -20,8 +20,6 @@ function getCollected(c) {
 }
 function getStatus(c) { const t = getTotal(c); if (!t) return 'none'; const p = getCollected(c); if (c.paid_complete_at || p >= t) return 'paid'; if (p > 0) return 'partial'; return 'outstanding'; }
 
-function fmtD(d) { return d ? new Date(d).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) : '—'; }
-
 export default function Finance() {
   const [cases, setCases] = useState([]);
   const [filter, setFilter] = useState('outstanding');
