@@ -348,11 +348,11 @@ export default function InternalOrder() {
 
   const filterBtn = (label, val, color) => {
     const on = filter === val;
-    return <button key={val} onClick={() => setFilter(val)} style={{ padding: '5px 11px', borderRadius: 6, border: `1px solid ${on ? 'var(--gold)' : 'var(--border)'}`, background: on ? 'var(--gold-dim)' : 'var(--surface-2)', color: on ? (color || 'var(--gold)') : 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: on ? 700 : 500 }}>{label}</button>;
+    return <button key={val} onClick={() => setFilter(val)} style={{ padding: '5px 11px', borderRadius: 6, border: `1px solid ${on ? 'var(--gold)' : 'var(--border)'}`, background: on ? 'var(--gold-dim)' : 'var(--surface-2)', color: on ? (color || 'var(--gold)') : 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: on ? 700 : 500 }}>{label}</button>;
   };
 
-  const selS = { padding: '3px 5px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 10, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' };
-  const btnS = { fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap' };
+  const selS = { padding: '3px 5px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)' };
+  const btnS = { fontSize: 13, padding: '4px 10px', whiteSpace: 'nowrap' };
 
   return (
     <div>
@@ -378,7 +378,7 @@ export default function InternalOrder() {
         {overdue.length > 0 && filterBtn(`逾期 (${overdue.length})`, 'overdue', 'var(--danger)')}
         {waitSign.length > 0 && filterBtn(`待回簽 (${waitSign.length})`, 'waitsign', '#d97706')}
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>顯示 {filtered.length} 件</span>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)', fontFamily: 'monospace' }}>顯示 {filtered.length} 件</span>
       </div>
       <div className="table-wrap">
         <table>
@@ -404,22 +404,22 @@ export default function InternalOrder() {
 
               // Route cell
               const routeCell = c.is_fireproof
-                ? <span style={{ fontSize: 10, lineHeight: 1.4, whiteSpace: 'nowrap' }}><span style={{ color: 'var(--danger)' }}>陸廠門板</span> → 運送 → <span style={{ color: '#3b82f6' }}>台廠加工</span><br /><span style={{ fontSize: 9, color: 'var(--text-muted)' }}>(+7天)</span></span>
-                : <span style={{ fontSize: 10, color: 'var(--success)', whiteSpace: 'nowrap' }}>陸廠整樘 → 運送</span>;
+                ? <span style={{ fontSize: 12, lineHeight: 1.4, whiteSpace: 'nowrap' }}><span style={{ color: 'var(--danger)' }}>陸廠門板</span> → 運送 → <span style={{ color: '#3b82f6' }}>台廠加工</span><br /><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>(+7天)</span></span>
+                : <span style={{ fontSize: 12, color: 'var(--success)', whiteSpace: 'nowrap' }}>陸廠整樘 → 運送</span>;
 
               // TW secondary cell
               let twCell;
-              if (!c.is_fireproof) twCell = <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>不需要</span>;
-              else if (t.twSecondaryDone) twCell = <span style={{ color: 'var(--success)', fontSize: 10 }}>✓ 完成 {fmtD(t.twSecondaryDone)}</span>;
-              else if (t.twSecondaryDate) twCell = <span style={{ color: '#3b82f6', fontSize: 10 }}>加工中 {fmtD(t.twSecondaryDate)}</span>;
-              else if (c.internal_order_date) twCell = <span style={{ color: 'var(--gold)', fontSize: 10 }}>待送台廠</span>;
+              if (!c.is_fireproof) twCell = <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>不需要</span>;
+              else if (t.twSecondaryDone) twCell = <span style={{ color: 'var(--success)', fontSize: 12 }}>✓ 完成 {fmtD(t.twSecondaryDone)}</span>;
+              else if (t.twSecondaryDate) twCell = <span style={{ color: '#3b82f6', fontSize: 12 }}>加工中 {fmtD(t.twSecondaryDate)}</span>;
+              else if (c.internal_order_date) twCell = <span style={{ color: 'var(--gold)', fontSize: 12 }}>待送台廠</span>;
               else twCell = <span style={{ color: 'var(--text-muted)' }}>—</span>;
 
               // Attach cell
               const attachCell = (
                 <span>
-                  {signedFile && <a href={signedFile.url} target="_blank" rel="noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none', fontSize: 11 }} title="客人回簽">📄</a>}
-                  {pdfFile && <a href={pdfFile.url} target="_blank" rel="noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none', fontSize: 11, marginLeft: 4 }} title="報價單PDF">📑</a>}
+                  {signedFile && <a href={signedFile.url} target="_blank" rel="noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none', fontSize: 13 }} title="客人回簽">📄</a>}
+                  {pdfFile && <a href={pdfFile.url} target="_blank" rel="noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none', fontSize: 13, marginLeft: 4 }} title="報價單PDF">📑</a>}
                   {!signedFile && !pdfFile && <span style={{ color: 'var(--text-muted)' }}>—</span>}
                 </span>
               );
@@ -452,9 +452,9 @@ export default function InternalOrder() {
                         <select value={(singleForm[c.id] || {}).factory || ''} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], factory: e.target.value } }))} style={selS}><option value="">廠商</option><option value="cn">陸廠</option><option value="tw">台廠</option></select>
                         <select value={(singleForm[c.id] || {}).proc || 'emboss'} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], proc: e.target.value } }))} style={selS}>{PROC_TYPES.map(p => <option key={p.value} value={p.value}>{p.label} ({p.days}天)</option>)}</select>
                         <select value={(singleForm[c.id] || {}).ship || 'sea'} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], ship: e.target.value } }))} style={selS}>{SHIP_METHODS.map(s => <option key={s.value} value={s.value}>{s.label} ({s.days}天)</option>)}</select>
-                        <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 2 }}><input type="checkbox" checked={(singleForm[c.id] || {}).wide || false} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], wide: e.target.checked } }))} style={{ width: 12, height: 12 }} />超寬</label>
+                        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 2 }}><input type="checkbox" checked={(singleForm[c.id] || {}).wide || false} onChange={e => setSingleForm(prev => ({ ...prev, [c.id]: { ...prev[c.id], wide: e.target.checked } }))} style={{ width: 12, height: 12 }} />超寬</label>
                       </div>
-                      <button className="btn btn-ghost btn-sm" onClick={() => addFactoryRow(c.id)} style={{ fontSize: 10, padding: '2px 6px', color: '#3b82f6', borderColor: '#3b82f6', alignSelf: 'flex-start' }}>+ 多廠下單</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => addFactoryRow(c.id)} style={{ fontSize: 12, padding: '2px 6px', color: '#3b82f6', borderColor: '#3b82f6', alignSelf: 'flex-start' }}>+ 多廠下單</button>
                     </div>
                   );
                 } else {
@@ -467,12 +467,12 @@ export default function InternalOrder() {
                           <select value={row.factory} onChange={e => updateFactoryRow(c.id, idx, 'factory', e.target.value)} style={selS}><option value="">廠商</option><option value="cn">陸廠</option><option value="tw">台廠</option></select>
                           <select value={row.proc} onChange={e => updateFactoryRow(c.id, idx, 'proc', e.target.value)} style={selS}>{PROC_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select>
                           <select value={row.ship} onChange={e => updateFactoryRow(c.id, idx, 'ship', e.target.value)} style={selS}><option value="sea">海運</option><option value="air">空運</option></select>
-                          <label style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 2 }}><span style={{ color: 'var(--text-muted)' }}>數量</span><input type="number" value={row.qty} min="1" onChange={e => updateFactoryRow(c.id, idx, 'qty', Number(e.target.value))} style={{ ...selS, width: 35 }} /></label>
-                          <label style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 1 }}><input type="checkbox" checked={row.wide} onChange={e => updateFactoryRow(c.id, idx, 'wide', e.target.checked)} style={{ width: 11, height: 11 }} />超寬</label>
+                          <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 2 }}><span style={{ color: 'var(--text-muted)' }}>數量</span><input type="number" value={row.qty} min="1" onChange={e => updateFactoryRow(c.id, idx, 'qty', Number(e.target.value))} style={{ ...selS, width: 35 }} /></label>
+                          <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 1 }}><input type="checkbox" checked={row.wide} onChange={e => updateFactoryRow(c.id, idx, 'wide', e.target.checked)} style={{ width: 11, height: 11 }} />超寬</label>
                           <button onClick={() => removeFactoryRow(c.id, idx)} style={{ border: 'none', background: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                         </div>
                       ))}
-                      <button className="btn btn-ghost btn-sm" onClick={() => addFactoryRow(c.id)} style={{ fontSize: 10, padding: '2px 6px', color: '#3b82f6', borderColor: '#3b82f6', alignSelf: 'flex-start' }}>+ 再加一筆</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => addFactoryRow(c.id)} style={{ fontSize: 12, padding: '2px 6px', color: '#3b82f6', borderColor: '#3b82f6', alignSelf: 'flex-start' }}>+ 再加一筆</button>
                     </div>
                   );
                 }
@@ -492,7 +492,7 @@ export default function InternalOrder() {
                           totalDays = Math.round((d2 - d1) / 86400000) + '天';
                         }
                         return (
-                          <div key={p.id || i} style={{ fontSize: 10, padding: '4px 8px', background: 'var(--surface-2)', borderRadius: 4, border: '1px solid var(--border)', lineHeight: 1.6 }}>
+                          <div key={p.id || i} style={{ fontSize: 12, padding: '4px 8px', background: 'var(--surface-2)', borderRadius: 4, border: '1px solid var(--border)', lineHeight: 1.6 }}>
                             <div>
                               <span style={{ fontWeight: 700, color: p.factory_code === 'TW' ? '#3b82f6' : 'var(--gold)' }}>{p.factory_code === 'TW' ? '台廠' : '陸廠'}</span>
                               <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{p.production_note || ''}</span>
@@ -511,7 +511,7 @@ export default function InternalOrder() {
                   const factoryLabel = c.factory_type === 'tw' ? '台廠' : c.factory_type === 'cn' ? '陸廠' : '—';
                   const procLabel = (PROC_TYPES.find(p => p.value === c.processing_type) || {}).label || '—';
                   const shipLabel = c.shipping_method === 'sea' ? '海運' : c.shipping_method === 'air' ? '空運' : '—';
-                  factoryCell = <span style={{ fontSize: 11 }}>{factoryLabel} / {procLabel} / {shipLabel}{c.is_overwidth && <span style={{ color: 'var(--danger)' }}> 超寬</span>}</span>;
+                  factoryCell = <span style={{ fontSize: 13 }}>{factoryLabel} / {procLabel} / {shipLabel}{c.is_overwidth && <span style={{ color: 'var(--danger)' }}> 超寬</span>}</span>;
                 }
               }
 
@@ -542,8 +542,8 @@ export default function InternalOrder() {
                 <tr key={c.id} style={{ background: bgColor }}>
                   <td>{statusCell}</td>
                   <td>
-                    <strong style={{ fontFamily: 'monospace', color: 'var(--gold)', fontSize: 11 }}>{c.formal_quote_no || c.order_no || c.case_no || '—'}</strong>
-                    {c.is_fireproof && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 8, background: 'rgba(239,68,68,.1)', color: 'var(--danger)', marginLeft: 4 }}>防火</span>}
+                    <strong style={{ fontFamily: 'monospace', color: 'var(--gold)', fontSize: 13 }}>{c.formal_quote_no || c.order_no || c.case_no || '—'}</strong>
+                    {c.is_fireproof && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 8, background: 'rgba(239,68,68,.1)', color: 'var(--danger)', marginLeft: 4 }}>防火</span>}
                   </td>
                   <td style={{ fontWeight: 600 }}>{c.customer_name || '—'}</td>
                   <td style={{ color: 'var(--text-muted)' }}>{c.sales_person || '—'}</td>
@@ -570,7 +570,7 @@ export default function InternalOrder() {
         <div style={{ marginBottom: 12 }}>
           <span style={{ fontSize: 13 }}>案件：</span>
           <strong>{rejectModal.caseName}</strong>
-          {rejectModal.hasProd && <span style={{ color: 'var(--danger)', fontSize: 11, marginLeft: 8 }}>（已下單給工廠，退回後工廠單將被取消）</span>}
+          {rejectModal.hasProd && <span style={{ color: 'var(--danger)', fontSize: 13, marginLeft: 8 }}>（已下單給工廠，退回後工廠單將被取消）</span>}
         </div>
         <div className="form-grid" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
           <div className="form-group">

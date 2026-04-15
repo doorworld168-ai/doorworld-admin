@@ -181,7 +181,7 @@ export default function ChinaFactory() {
             );
           })}
         </div>
-        <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 3, textAlign: 'center' }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, textAlign: 'center' }}>
           {completedIdx >= 0 ? CN_STAGES[completedIdx].label : '未開始'}
         </div>
         {/* Advance/Retreat controls */}
@@ -189,7 +189,7 @@ export default function ChinaFactory() {
           <div style={{ marginTop: 6, display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
             {currentStage && (
               <button onClick={() => retreatStage(c.id, currentStage.field)}
-                style={{ fontSize: 9, padding: '2px 6px', border: '1px solid var(--text-muted)', borderRadius: 4, background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--text-muted)', borderRadius: 4, background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                 ← {currentStage.short}
               </button>
             )}
@@ -197,13 +197,13 @@ export default function ChinaFactory() {
               value={inputVal}
               onChange={e => setAdvanceInput(prev => ({ ...prev, [c.id]: e.target.value }))}
               placeholder={nextStage.label}
-              style={{ flex: 1, minWidth: 80, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text)', fontSize: 10, fontFamily: 'var(--font-body)' }}
+              style={{ flex: 1, minWidth: 80, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-body)' }}
               onKeyDown={e => { if (e.key === 'Enter') advanceStage(c.id, nextStage.field, inputVal); }}
             />
             <button
               onClick={() => advanceStage(c.id, nextStage.field, inputVal)}
               disabled={!inputVal.trim()}
-              style={{ fontSize: 9, padding: '2px 8px', border: '1px solid var(--gold)', borderRadius: 4, background: inputVal.trim() ? 'var(--gold-dim)' : 'none', color: inputVal.trim() ? 'var(--gold)' : 'var(--text-muted)', cursor: inputVal.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
+              style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--gold)', borderRadius: 4, background: inputVal.trim() ? 'var(--gold-dim)' : 'none', color: inputVal.trim() ? 'var(--gold)' : 'var(--text-muted)', cursor: inputVal.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
               {nextStage.short} →
             </button>
           </div>
@@ -245,10 +245,10 @@ export default function ChinaFactory() {
 
   const filterBtn = (label, val, color) => {
     const on = filter === val;
-    return <button key={val} onClick={() => setFilter(val)} style={{ padding: '5px 11px', borderRadius: 6, border: `1px solid ${on ? 'var(--gold)' : 'var(--border)'}`, background: on ? 'var(--gold-dim)' : 'var(--surface-2)', color: on ? (color || 'var(--gold)') : 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: on ? 700 : 500 }}>{label}</button>;
+    return <button key={val} onClick={() => setFilter(val)} style={{ padding: '5px 11px', borderRadius: 6, border: `1px solid ${on ? 'var(--gold)' : 'var(--border)'}`, background: on ? 'var(--gold-dim)' : 'var(--surface-2)', color: on ? (color || 'var(--gold)') : 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: on ? 700 : 500 }}>{label}</button>;
   };
 
-  const inputStyle = { padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 12, background: 'var(--surface-2)', color: 'var(--text)', width: '100%', fontFamily: 'var(--font-body)' };
+  const inputStyle = { padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', width: '100%', fontFamily: 'var(--font-body)' };
 
   const editFields = [
     { key: 'cn_ilande_no', label: '意郎德編號', type: 'text' },
@@ -338,12 +338,12 @@ export default function ChinaFactory() {
                       <td style={{ padding: 8, borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
                         <input type="date" value={editValue} onChange={e => setEditValue(e.target.value)}
                           onBlur={saveCell} onKeyDown={e => { if (e.key === 'Enter') saveCell(); if (e.key === 'Escape') setEditingCell(null); }}
-                          autoFocus style={{ width: '100%', padding: '3px 4px', border: '1px solid var(--gold)', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text)', fontSize: 11, fontFamily: 'var(--font-body)' }} />
+                          autoFocus style={{ width: '100%', padding: '3px 4px', border: '1px solid var(--gold)', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
                       </td>
                     );
                   }
                   return (
-                    <td onClick={() => startEditDate(c.id, field, val || '')} style={{ padding: 8, borderBottom: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'monospace', fontSize: 10, textAlign: 'center' }} title="點擊編輯">
+                    <td onClick={() => startEditDate(c.id, field, val || '')} style={{ padding: 8, borderBottom: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'monospace', fontSize: 12, textAlign: 'center' }} title="點擊編輯">
                       {val ? fmtD(val) : <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>—</span>}
                     </td>
                   );
@@ -352,17 +352,17 @@ export default function ChinaFactory() {
                 return (
                   <tr key={c.id} style={{ background: overdue ? 'rgba(239,68,68,.04)' : 'transparent' }}>
                     <td style={{ textAlign: 'left' }}>
-                      <strong style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--gold)' }}>{c.formal_quote_no || c.order_no || c.case_no || '—'}</strong>
-                      {c.is_fireproof && <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 6, background: 'rgba(239,68,68,.1)', color: 'var(--danger)', marginLeft: 4 }}>防火</span>}
+                      <strong style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--gold)' }}>{c.formal_quote_no || c.order_no || c.case_no || '—'}</strong>
+                      {c.is_fireproof && <span style={{ fontSize: 10, padding: '1px 4px', borderRadius: 6, background: 'rgba(239,68,68,.1)', color: 'var(--danger)', marginLeft: 4 }}>防火</span>}
                     </td>
                     <td style={{ textAlign: 'left', fontWeight: 600 }}>{c.customer_name || '—'}</td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 10, textAlign: 'center' }}>{orderDate ? fmtD(orderDate) : '—'}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12, textAlign: 'center' }}>{orderDate ? fmtD(orderDate) : '—'}</td>
                     <td style={{ textAlign: 'center' }}>
                       {totalDays ? (
-                        <span><span style={{ fontWeight: 700 }}>{totalDays}</span><br /><span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{procLabel} {procDays}d + {shipLabel} {shipDays}d</span></span>
+                        <span><span style={{ fontWeight: 700 }}>{totalDays}</span><br /><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{procLabel} {procDays}d + {shipLabel} {shipDays}d</span></span>
                       ) : (c.cn_delivery_days || '—')}
                     </td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 10, color: overdue ? 'var(--danger)' : 'var(--text)', fontWeight: overdue ? 700 : 400, textAlign: 'center' }}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12, color: overdue ? 'var(--danger)' : 'var(--text)', fontWeight: overdue ? 700 : 400, textAlign: 'center' }}>
                       {estDelivery ? fmtD(estDelivery) : '—'}{overdue && ' ⚠'}
                     </td>
                     <td style={{ padding: '6px 12px' }}><StepBar c={c} /></td>
@@ -373,15 +373,15 @@ export default function ChinaFactory() {
                       <td style={{ padding: 8, borderBottom: '1px solid var(--border)' }}>
                         <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)}
                           onBlur={saveCell} onKeyDown={e => { if (e.key === 'Enter') saveCell(); if (e.key === 'Escape') setEditingCell(null); }}
-                          autoFocus style={{ width: '100%', padding: '3px 5px', border: '1px solid var(--gold)', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text)', fontSize: 11, fontFamily: 'var(--font-body)', textAlign: 'center' }} />
+                          autoFocus style={{ width: '100%', padding: '3px 5px', border: '1px solid var(--gold)', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-body)', textAlign: 'center' }} />
                       </td>
                     ) : (
-                      <td onClick={() => startEditCell(c.id, 'cn_note', c.cn_note)} style={{ cursor: 'pointer', maxWidth: 120, fontSize: 11, padding: 8, borderBottom: '1px solid var(--border)' }} title="點擊編輯備註">
+                      <td onClick={() => startEditCell(c.id, 'cn_note', c.cn_note)} style={{ cursor: 'pointer', maxWidth: 120, fontSize: 13, padding: 8, borderBottom: '1px solid var(--border)' }} title="點擊編輯備註">
                         {c.cn_note || <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>—</span>}
                       </td>
                     )}
                     <td style={{ padding: 8, borderBottom: '1px solid var(--border)' }}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => openEditRow(c)} style={{ fontSize: 10, padding: '3px 8px' }} title="編輯整行">✎</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEditRow(c)} style={{ fontSize: 12, padding: '3px 8px' }} title="編輯整行">✎</button>
                     </td>
                   </tr>
                 );
@@ -412,7 +412,7 @@ export default function ChinaFactory() {
             }
             return (
               <div key={f.key} style={span}>
-                <label style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3, display: 'block' }}>{f.label}</label>
+                <label style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 3, display: 'block' }}>{f.label}</label>
                 {inputEl}
               </div>
             );

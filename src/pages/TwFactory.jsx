@@ -91,7 +91,7 @@ export default function TwFactory() {
         border: `1px solid ${on ? 'var(--gold)' : 'var(--border)'}`,
         background: on ? 'var(--gold-dim)' : 'var(--surface-2)',
         color: on ? (color || 'var(--gold)') : 'var(--text-muted)',
-        fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)',
+        fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
         fontWeight: on ? 700 : 500
       }}>{label}</button>
     );
@@ -142,13 +142,13 @@ export default function TwFactory() {
               }}>
                 {/* Header */}
                 <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <strong style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--gold)' }}>{c.order_no || c.case_no || p.case_no || '—'}</strong>
+                  <strong style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--gold)' }}>{c.order_no || c.case_no || p.case_no || '—'}</strong>
                   <span style={{ fontWeight: 600 }}>{c.customer_name || '—'}</span>
-                  {c.product_code && <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{c.product_code}</span>}
-                  {c.is_fireproof && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 8, background: 'rgba(239,68,68,.1)', color: 'var(--danger)' }}>防火</span>}
+                  {c.product_code && <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>{c.product_code}</span>}
+                  {c.is_fireproof && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 8, background: 'rgba(239,68,68,.1)', color: 'var(--danger)' }}>防火</span>}
                   <span className="badge" style={{ background: st.bg, color: st.color }}>{st.label}</span>
-                  {p.production_order_no && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>單號: {p.production_order_no}</span>}
-                  {c.total_with_tax && <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--gold)', fontWeight: 700 }}>{fmtPrice(c.total_with_tax)}</span>}
+                  {p.production_order_no && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>單號: {p.production_order_no}</span>}
+                  {c.total_with_tax && <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--gold)', fontWeight: 700 }}>{fmtPrice(c.total_with_tax)}</span>}
                 </div>
 
                 {/* Step bar */}
@@ -162,7 +162,7 @@ export default function TwFactory() {
                         <div key={s} style={{ display: 'flex', alignItems: 'center' }}>
                           {i > 0 && <div style={{ width: 12, height: 2, background: done ? '#10b981' : 'var(--surface-high)' }} />}
                           <span style={{
-                            fontSize: 8, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap',
+                            fontSize: 10, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap',
                             background: current ? st.bg : done ? 'rgba(16,185,129,.15)' : 'var(--surface-high)',
                             color: current ? st.color : done ? '#10b981' : 'var(--text-muted)',
                             fontWeight: current ? 700 : 500
@@ -174,7 +174,7 @@ export default function TwFactory() {
                 )}
 
                 {/* Details */}
-                <div style={{ padding: '6px 16px 10px', display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ padding: '6px 16px 10px', display: 'flex', gap: 16, fontSize: 13, color: 'var(--text-muted)', flexWrap: 'wrap', alignItems: 'center' }}>
                   {p.production_note && <span>{p.production_note}</span>}
                   {p.order_date && <span>下單 {fmtD(p.order_date)}</span>}
                   {p.estimated_delivery && <span>預計 {fmtD(p.estimated_delivery)}</span>}
@@ -188,23 +188,23 @@ export default function TwFactory() {
                   <div style={{ padding: '6px 16px 10px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {stepIdx > 0 && (
                       <button className="btn btn-ghost btn-sm" onClick={() => confirm('確認退回？', `將狀態從「${st.label}」退回「${(STATUS_MAP[STEPS[stepIdx - 1]] || {}).label}」`, () => updateStatus(p.id, STEPS[stepIdx - 1]))}
-                        style={{ fontSize: 10, borderColor: 'var(--text-muted)', color: 'var(--text-muted)' }}>
+                        style={{ fontSize: 12, borderColor: 'var(--text-muted)', color: 'var(--text-muted)' }}>
                         ← {(STATUS_MAP[STEPS[stepIdx - 1]] || {}).label}
                       </button>
                     )}
                     {stepIdx < STEPS.length - 1 && stepIdx >= 0 && (
                       <button className="btn btn-ghost btn-sm" onClick={() => confirm('確認推進？', `將狀態推進到「${(STATUS_MAP[STEPS[stepIdx + 1]] || {}).label}」`, () => updateStatus(p.id, STEPS[stepIdx + 1]))}
-                        style={{ fontSize: 10, borderColor: 'var(--gold)', color: 'var(--gold)' }}>
+                        style={{ fontSize: 12, borderColor: 'var(--gold)', color: 'var(--gold)' }}>
                         推進 → {(STATUS_MAP[STEPS[stepIdx + 1]] || {}).label}
                       </button>
                     )}
                     {p.production_status !== 'shipped' && (
                       <button className="btn btn-ghost btn-sm" onClick={() => confirm('確認出貨？', '將此工單標記為已出貨', () => markShipped(p.id))}
-                        style={{ fontSize: 10, borderColor: 'var(--success)', color: 'var(--success)' }}>
+                        style={{ fontSize: 12, borderColor: 'var(--success)', color: 'var(--success)' }}>
                         標記出貨
                       </button>
                     )}
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteProd(p)} style={{ fontSize: 10 }}>刪除</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => deleteProd(p)} style={{ fontSize: 12 }}>刪除</button>
                   </div>
                 )}
               </div>
