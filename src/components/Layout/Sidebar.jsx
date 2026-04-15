@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { section: '前置作業' },
   { path: '/quotes', label: '估價單', icon: 'receipt_long' },
   { path: '/measurement', label: '丈量安排', icon: 'straighten' },
+  { path: '/measurement/tasks', label: '師傅待丈量', icon: 'engineering' },
   { path: '/drafting', label: '製圖進度', icon: 'draw' },
   { path: '/formalquote', label: '報價單', icon: 'request_quote' },
   { divider: true },

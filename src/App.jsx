@@ -38,7 +38,7 @@ const AIPrompt = lazy(() => import('./pages/AIPrompt'));
 const TITLES = {
   '/': '儀表板', '/bossview': '老闆視角', '/members': '會員管理',
   '/products': '產品管理', '/service': '施工費用', '/quotes': '估價單',
-  '/quotes/new': '新增估價單', '/measurement': '丈量安排', '/drafting': '製圖進度',
+  '/quotes/new': '新增估價單', '/measurement': '丈量安排', '/measurement/tasks': '師傅待丈量', '/drafting': '製圖進度',
   '/formalquote': '報價單總表', '/formalquote/new': '新增報價單', '/cases': '案件總覽',
   '/ordering': '下單追蹤', '/salesorder': '業務下單', '/internalorder': '內勤下單',
   '/chinafactory': '大陸工廠', '/twfactory': '台灣工廠', '/installation': '安裝排程',
@@ -100,6 +100,7 @@ function AppContent() {
                 <Route path="/quotes" element={<Quotes />} />
                 <Route path="/quotes/new" element={<NewQuote />} />
                 <Route path="/measurement" element={<Measurement />} />
+                <Route path="/measurement/tasks" element={<Measurement initialTab="tasks" />} />
                 <Route path="/drafting" element={<Drafting />} />
                 <Route path="/formalquote" element={<FormalQuote />} />
                 <Route path="/formalquote/new" element={<NewFormalQuote />} />

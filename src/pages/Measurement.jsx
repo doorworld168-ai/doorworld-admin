@@ -86,10 +86,10 @@ function CalendarView({ data, dateField, onClickDate }) {
   );
 }
 
-export default function Measurement() {
+export default function Measurement({ initialTab = 'schedule' }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mainTab, setMainTab] = useState('schedule'); // 'schedule' | 'tasks'
+  const [mainTab, setMainTab] = useState(initialTab); // 'schedule' | 'tasks'
 
   // Dispatch modal (admin sets date/staff/address/type)
   const [modal, setModal] = useState({ open: false, data: null });
