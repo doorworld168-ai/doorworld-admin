@@ -26,6 +26,7 @@ export default function Quotes() {
   const [measureFee, setMeasureFee] = useState(500);
   const [measureMethod, setMeasureMethod] = useState('transfer');
   const [twDistricts, setTwDistricts] = useState({});
+  const [selectedIds, setSelectedIds] = useState(new Set()); // 批量選取
 
   // Editable customer fields
   const [editName, setEditName] = useState('');
@@ -139,6 +140,50 @@ export default function Quotes() {
     });
   }
 
+  // 批量刪除
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    if (selectedIds.size === rows.length && rows.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(rows.map(r => r.id)));
+    }
+  }
+  async function bulkDelete() {
+    if (!user?.isAdmin) { toast('僅管理員可批量刪除', 'error'); return; }
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const linkedCount = rows.filter(r => selectedIds.has(r.id) && r.case_id).length;
+    const msg = `確定要刪除 ${ids.length} 筆估價單？${linkedCount > 0 ? `\n\n其中 ${linkedCount} 筆已關聯案件，刪除後案件 quote_id 會變空值。` : ''}\n\n此動作無法復原。`;
+    confirm(`批量刪除 ${ids.length} 筆？`, msg, async () => {
+      let okCount = 0, failCount = 0;
+      const failures = [];
+      for (const id of ids) {
+        try {
+          await sbFetch(`quotes?id=eq.${id}`, { method: 'DELETE' });
+          okCount++;
+        } catch (e) {
+          failCount++;
+          const q = rows.find(r => r.id === id);
+          failures.push(q?.quote_no || id);
+        }
+      }
+      if (failCount === 0) {
+        toast(`已刪除 ${okCount} 筆`, 'success');
+      } else {
+        toast(`成功 ${okCount} 筆，失敗 ${failCount} 筆 (${failures.slice(0, 3).join(', ')}${failures.length > 3 ? '...' : ''})`, failCount === ids.length ? 'error' : 'warning');
+      }
+      setSelectedIds(new Set());
+      load();
+    });
+  }
+
   async function createCase(q) {
     const no = 'CS-' + new Date().toISOString().replace(/[-T:]/g, '').slice(0, 14);
     try {
@@ -196,16 +241,68 @@ export default function Quotes() {
         <button className="btn btn-ghost" onClick={load}>↻</button>
       </div>
 
+      {/* 批量操作 bar — 僅管理員、有勾選時顯示 */}
+      {user?.isAdmin && selectedIds.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+          background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)',
+          borderRadius: 'var(--radius)', marginBottom: 10
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)' }}>
+            已選取 {selectedIds.size} 筆
+          </span>
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={bulkDelete}
+            style={{ fontSize: 12 }}
+          >
+            🗑 批量刪除
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setSelectedIds(new Set())}
+            style={{ fontSize: 12, marginLeft: 'auto' }}
+          >
+            取消選取
+          </button>
+        </div>
+      )}
+
       <div className="table-wrap">
         <table>
-          <thead><tr><th>單號</th><th>客戶</th><th>電話</th><th>產品</th><th>門型</th><th>數量</th><th>總價</th><th>狀態</th><th>建立時間</th>{user?.isAdmin && <th style={{ width: 60 }}>操作</th>}</tr></thead>
+          <thead><tr>
+            {user?.isAdmin && (
+              <th style={{ width: 36, textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={rows.length > 0 && selectedIds.size === rows.length}
+                  onChange={toggleSelectAll}
+                  style={{ accentColor: 'var(--gold)', cursor: 'pointer' }}
+                  title="全選 / 取消全選"
+                />
+              </th>
+            )}
+            <th>單號</th><th>客戶</th><th>電話</th><th>產品</th><th>門型</th><th>數量</th><th>總價</th><th>狀態</th><th>建立時間</th>
+            {user?.isAdmin && <th style={{ width: 60 }}>操作</th>}
+          </tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={user?.isAdmin ? 10 : 9}><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
-            : rows.length === 0 ? <tr><td colSpan={user?.isAdmin ? 10 : 9}><div className="empty"><div className="icon">📋</div>沒有估價單</div></td></tr>
+            {loading ? <tr><td colSpan={user?.isAdmin ? 11 : 9}><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
+            : rows.length === 0 ? <tr><td colSpan={user?.isAdmin ? 11 : 9}><div className="empty"><div className="icon">📋</div>沒有估價單</div></td></tr>
             : rows.map(q => {
               const [sl, sc, sb] = STATUS_MAP[q.status] || STATUS_MAP.draft;
+              const isSelected = selectedIds.has(q.id);
               return (
-                <tr key={q.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(q)}>
+                <tr key={q.id} style={{ cursor: 'pointer', background: isSelected ? 'rgba(239,68,68,.05)' : undefined }} onClick={() => openDetail(q)}>
+                  {user?.isAdmin && (
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(q.id)}
+                        style={{ accentColor: 'var(--gold)', cursor: 'pointer' }}
+                      />
+                    </td>
+                  )}
                   <td><strong style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gold)' }}>{q.quote_no || '—'}</strong></td>
                   <td><strong style={{ fontWeight: 600, fontSize: 13 }}>{q.customer_name || '—'}</strong></td>
                   <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{q.customer_phone || '—'}</td>
@@ -223,7 +320,7 @@ export default function Quotes() {
                         onClick={() => deleteQuote(q)}
                         title="刪除估價單（僅管理員）"
                       >
-                        🗑 刪除
+                        🗑
                       </button>
                     </td>
                   )}
