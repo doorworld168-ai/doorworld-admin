@@ -35,6 +35,8 @@ export default function Cases() {
   const [initialForm, setInitialForm] = useState({});
   const [selected, setSelected] = useState(new Set());
   const [batchStatus, setBatchStatus] = useState('');
+  const [deleteIssues, setDeleteIssues] = useState([]); // 開啟 modal 時主動檢查
+  const [bulkBlockers, setBulkBlockers] = useState({ open: false, list: [] }); // 批量刪除被擋的清單
   const searchRef = useRef(null);
   const toast = useToast();
   const confirm = useConfirm();
@@ -94,12 +96,18 @@ export default function Cases() {
   // Track which case modal is open to prevent stale responses
   const activeCaseRef = useRef(null);
 
-  function openCase(c) {
+  async function openCase(c) {
     const copy = { ...c };
     setForm(copy);
     setInitialForm(copy);
     setModal({ open: true, data: c });
     activeCaseRef.current = c.id;
+    // 管理員開 modal 時主動檢查刪除阻礙
+    setDeleteIssues([]);
+    if (user?.isAdmin) {
+      const issues = await checkDownstream(c);
+      if (activeCaseRef.current === c.id) setDeleteIssues(issues);
+    }
   }
 
   function isDirty() {
@@ -190,8 +198,9 @@ export default function Cases() {
     if (!user?.isAdmin) { toast('僅管理員可刪除案件', 'error'); return; }
     const c = modal.data;
     const issues = await checkDownstream(c);
+    setDeleteIssues(issues);
     if (issues.length > 0) {
-      toast(`此案件無法刪除：\n${issues.map((x, i) => `${i + 1}. ${x}`).join('\n')}`, 'error');
+      toast(`無法刪除，共 ${issues.length} 項下游資料未清除（詳見 modal 內紅色面板）`, 'error');
       return;
     }
     confirm('確定刪除案件？', `${c.order_no || c.case_no} (${c.customer_name || '—'}) 將永久刪除，此動作無法復原。\n\n相關估價單的 case_id 會被清除。`, async () => {
@@ -224,11 +233,16 @@ export default function Cases() {
       else deletable.push(c);
     }
     if (deletable.length === 0) {
-      toast(`選取的 ${allSelected.length} 筆全部有下游資料，無法刪除`, 'error');
+      // 全部被擋 → 開 modal 列出每筆完整原因
+      setBulkBlockers({ open: true, list: blocked });
       return;
     }
+    if (blocked.length > 0) {
+      // 有部分被擋 → 也開 modal 給管理員看，但同時可以選擇繼續刪可刪的
+      setBulkBlockers({ open: true, list: blocked });
+    }
     const blockedNote = blocked.length > 0
-      ? `\n\n⚠ 其中 ${blocked.length} 筆有下游資料會跳過：\n${blocked.slice(0, 3).map(b => `${b.c.order_no || b.c.case_no}：${b.issues[0]}`).join('\n')}${blocked.length > 3 ? `\n...另 ${blocked.length - 3} 筆` : ''}`
+      ? `\n\n⚠ 其中 ${blocked.length} 筆有下游資料會跳過（詳見彈出視窗）`
       : '';
     confirm(`批量刪除 ${deletable.length} 筆案件？`, `將永久刪除 ${deletable.length} 筆，無法復原。${blockedNote}`, async () => {
       let okCount = 0, failCount = 0;
@@ -445,12 +459,66 @@ export default function Cases() {
       </div>
 
       <Modal open={modal.open} onClose={tryClose} title={`案件詳細${isDirty() ? ' •' : ''}`} maxWidth={720}
-        footer={<><button className="btn btn-ghost" onClick={tryClose}>關閉</button>{user?.isAdmin && <button className="btn btn-danger" onClick={deleteCase}>🗑 刪除</button>}</>}>
+        footer={<>
+          <button className="btn btn-ghost" onClick={tryClose}>關閉</button>
+          {user?.isAdmin && (
+            <button
+              className="btn btn-danger"
+              onClick={deleteCase}
+              disabled={deleteIssues.length > 0}
+              title={deleteIssues.length > 0 ? `有 ${deleteIssues.length} 項下游資料阻擋（見上方紅色面板）` : '刪除案件'}
+              style={deleteIssues.length > 0 ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+            >
+              🗑 刪除{deleteIssues.length > 0 ? ` (被阻擋 ${deleteIssues.length} 項)` : ''}
+            </button>
+          )}
+        </>}>
         {modal.open && <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <strong>{form.case_no}</strong>
             <span className="badge" style={{ background: st.bg, color: st.color }}>{CASE_STATUS_LABEL[form.status]}</span>
           </div>
+
+          {/* 無法刪除原因面板（管理員 + 有下游資料時顯示） */}
+          {user?.isAdmin && deleteIssues.length > 0 && (
+            <div style={{
+              background: 'rgba(239,68,68,.06)',
+              border: '1px solid rgba(239,68,68,.3)',
+              borderRadius: 'var(--radius)',
+              padding: '12px 14px',
+              marginBottom: 14
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18, color: 'var(--danger)', fontVariationSettings: "'FILL' 1" }}>block</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)' }}>無法刪除 — 共 {deleteIssues.length} 項下游資料未清除</span>
+              </div>
+              <ol style={{ margin: 0, paddingLeft: 22, fontSize: 12, color: 'var(--text)', lineHeight: 1.7 }}>
+                {deleteIssues.map((issue, i) => (
+                  <li key={i} style={{ marginBottom: 2 }}>{issue}</li>
+                ))}
+              </ol>
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                請依上方括號內提示前往對應頁面清除，全部清完後刪除按鈕會自動啟用。
+              </div>
+            </div>
+          )}
+          {user?.isAdmin && deleteIssues.length === 0 && (
+            <div style={{
+              background: 'rgba(34,197,94,.06)',
+              border: '1px solid rgba(34,197,94,.3)',
+              borderRadius: 'var(--radius)',
+              padding: '8px 12px',
+              marginBottom: 14,
+              fontSize: 12,
+              color: 'var(--success)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>check_circle</span>
+              此案件無下游資料，可以安全刪除
+            </div>
+          )}
           {/* Stepper */}
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
             {CASE_STEPS.map((s, i) => (
@@ -496,6 +564,37 @@ export default function Cases() {
             </div>
           </div>
         </>}
+      </Modal>
+
+      {/* 批量刪除被擋的清單 modal */}
+      <Modal
+        open={bulkBlockers.open}
+        onClose={() => setBulkBlockers({ open: false, list: [] })}
+        title={`批量刪除 — ${bulkBlockers.list.length} 筆案件被阻擋`}
+        maxWidth={680}
+        footer={<button className="btn btn-ghost" onClick={() => setBulkBlockers({ open: false, list: [] })}>關閉</button>}
+      >
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+          以下案件因為有下游資料無法刪除，請先到對應頁面清除：
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 480, overflow: 'auto' }}>
+          {bulkBlockers.list.map(({ c, issues }) => (
+            <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '10px 14px', background: 'var(--surface-low)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--gold)' }}>
+                  {c.order_no || c.case_no}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{c.customer_name || '—'}</span>
+                <span style={{ fontSize: 10, padding: '1px 6px', background: 'rgba(239,68,68,.1)', color: 'var(--danger)', borderRadius: 3, fontWeight: 700 }}>
+                  {issues.length} 項阻礙
+                </span>
+              </div>
+              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 11, color: 'var(--text)', lineHeight: 1.6 }}>
+                {issues.map((issue, i) => <li key={i}>{issue}</li>)}
+              </ol>
+            </div>
+          ))}
+        </div>
       </Modal>
     </div>
   );
