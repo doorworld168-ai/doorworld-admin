@@ -79,12 +79,12 @@ export default function FormalQuote() {
       toast(`此報價單無法刪除：\n${issues.map((x, i) => `${i + 1}. ${x}`).join('\n')}`, 'error');
       return;
     }
-    confirm('確認刪除報價單？', `${c.order_no || c.case_no} (${c.customer_name || '—'}) 將永久刪除，此動作無法復原。\n\n相關估價單的 case_id 會被清除，但估價單本身不會刪除。`, async () => {
+    confirm('確認刪除報價單？', `${c.order_no || c.case_no} (${c.customer_name || '—'}) 將永久刪除，此動作無法復原。\n\n• 相關估價單的 case_id 會被清除\n• 已取消的工廠生產記錄會一併刪除`, async () => {
       try {
-        // 先解除關聯估價單的 case_id
         if (c.quote_id) {
           await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
         }
+        await sbFetch(`production?case_id=eq.${c.id}&production_status=eq.cancelled`, { method: 'DELETE' }).catch(() => {});
         await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
         toast('已刪除', 'success');
         load();
@@ -141,6 +141,7 @@ export default function FormalQuote() {
           if (c.quote_id) {
             await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
           }
+          await sbFetch(`production?case_id=eq.${c.id}&production_status=eq.cancelled`, { method: 'DELETE' }).catch(() => {});
           await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
           okCount++;
         } catch (e) {

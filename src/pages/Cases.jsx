@@ -203,16 +203,20 @@ export default function Cases() {
       toast(`無法刪除，共 ${issues.length} 項下游資料未清除（詳見 modal 內紅色面板）`, 'error');
       return;
     }
-    confirm('確定刪除案件？', `${c.order_no || c.case_no} (${c.customer_name || '—'}) 將永久刪除，此動作無法復原。\n\n相關估價單的 case_id 會被清除。`, async () => {
+    confirm('確定刪除案件？', `${c.order_no || c.case_no} (${c.customer_name || '—'}) 將永久刪除，此動作無法復原。\n\n• 相關估價單的 case_id 會被清除\n• 已取消的工廠生產記錄會一併刪除`, async () => {
       try {
+        // 1. 解除估價單關聯
         await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
+        // 2. 自動清掉已取消的 production 記錄（這些是 FK 殘留，cancelled 已等同無效）
+        await sbFetch(`production?case_id=eq.${c.id}&production_status=eq.cancelled`, { method: 'DELETE' }).catch(() => {});
+        // 3. 刪除 case
         await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
         toast('已刪除', 'success');
         setModal({ open: false, data: null });
         load();
       } catch (e) {
         if (String(e.message).includes('foreign key') || String(e.message).includes('violates')) {
-          toast('刪除失敗：此案件仍被其他資料引用', 'error');
+          toast('刪除失敗：此案件仍被其他資料引用（可能還有未取消的生產記錄或付款）', 'error');
         } else {
           toast('刪除失敗：' + e.message, 'error');
         }
@@ -250,6 +254,7 @@ export default function Cases() {
       for (const c of deletable) {
         try {
           await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
+          await sbFetch(`production?case_id=eq.${c.id}&production_status=eq.cancelled`, { method: 'DELETE' }).catch(() => {});
           await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
           okCount++;
         } catch (e) {
