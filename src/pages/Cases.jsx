@@ -479,7 +479,7 @@ export default function Cases() {
             <span className="badge" style={{ background: st.bg, color: st.color }}>{CASE_STATUS_LABEL[form.status]}</span>
           </div>
 
-          {/* 無法刪除原因面板（管理員 + 有下游資料時顯示） */}
+          {/* 無法刪除原因面板 — 只在有阻礙時顯示 */}
           {user?.isAdmin && deleteIssues.length > 0 && (
             <div style={{
               background: 'rgba(239,68,68,.06)',
@@ -497,87 +497,87 @@ export default function Cases() {
                   <li key={i} style={{ marginBottom: 2 }}>{issue}</li>
                 ))}
               </ol>
-
-              {/* 一鍵清理工具 */}
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(239,68,68,.3)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--danger)', marginBottom: 6, letterSpacing: 1 }}>🛠 快速清理（管理員）</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {/* 變更狀態為 cancelled */}
-                  {ADVANCED_STATUSES.includes(form.status) && (
-                    <button
-                      onClick={async () => {
-                        confirm('變更狀態為「已取消」?', '會把案件狀態改為 cancelled，本身不會刪除任何資料。', async () => {
-                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled', updated_at: new Date().toISOString() }) });
-                          toast('狀態已改為已取消', 'success');
-                          // 重新檢查
-                          const updated = { ...modal.data, status: 'cancelled' };
-                          setForm(f => ({ ...f, status: 'cancelled' }));
-                          const issues = await checkDownstream(updated);
-                          setDeleteIssues(issues);
-                          load();
-                        });
-                      }}
-                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                    >改狀態為「已取消」</button>
-                  )}
-                  {/* 清除收款標記 */}
-                  {(form.measure_fee_paid_at || form.deposit_50_paid_at || form.balance_paid_at) && (
-                    <button
-                      onClick={async () => {
-                        confirm('清除所有收款標記?', '會把丈量費/訂金/尾款的「已收日期」全部清空。', async () => {
-                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null, updated_at: new Date().toISOString() }) });
-                          toast('收款標記已清除', 'success');
-                          const updated = { ...modal.data, measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null };
-                          setForm(f => ({ ...f, measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null }));
-                          const issues = await checkDownstream(updated);
-                          setDeleteIssues(issues);
-                          load();
-                        });
-                      }}
-                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                    >清除收款標記</button>
-                  )}
-                  {/* 清除附件 */}
-                  {Array.isArray(form.case_files) && form.case_files.length > 0 && (
-                    <button
-                      onClick={async () => {
-                        confirm('清除所有附件?', `會清除 ${form.case_files.length} 個附件（從 case_files 欄位移除）。\n\n注意：Supabase Storage 檔案不會自動刪除。`, async () => {
-                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ case_files: [], updated_at: new Date().toISOString() }) });
-                          toast('附件已清除', 'success');
-                          const updated = { ...modal.data, case_files: [] };
-                          setForm(f => ({ ...f, case_files: [] }));
-                          const issues = await checkDownstream(updated);
-                          setDeleteIssues(issues);
-                          load();
-                        });
-                      }}
-                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                    >清除 {form.case_files.length} 個附件</button>
-                  )}
-                  {/* 清除業務/內勤下單日期 */}
-                  {(form.sales_order_date || form.internal_order_date) && (
-                    <button
-                      onClick={async () => {
-                        confirm('清除下單日期?', '會把業務下單日、內勤下單日、工廠類型一併清空。', async () => {
-                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ sales_order_date: null, internal_order_date: null, factory_type: null, estimated_arrival: null, updated_at: new Date().toISOString() }) });
-                          toast('下單日期已清除', 'success');
-                          const updated = { ...modal.data, sales_order_date: null, internal_order_date: null, factory_type: null };
-                          setForm(f => ({ ...f, sales_order_date: null, internal_order_date: null, factory_type: null }));
-                          const issues = await checkDownstream(updated);
-                          setDeleteIssues(issues);
-                          load();
-                        });
-                      }}
-                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                    >清除下單日期</button>
-                  )}
-                </div>
-                <div style={{ marginTop: 6, fontSize: 10, color: 'var(--text-muted)' }}>
-                  其他項目（payments 表、台廠生產、大陸工廠）請到對應頁面用對應按鈕清除。
-                </div>
-              </div>
             </div>
           )}
+
+          {/* 🛠 快速清理工具列 — 管理員永遠顯示，不論是否有阻礙 */}
+          {user?.isAdmin && (() => {
+            const hasStatus = ADVANCED_STATUSES.includes(form.status);
+            const hasPayMark = !!(form.measure_fee_paid_at || form.deposit_50_paid_at || form.balance_paid_at);
+            const hasFiles = Array.isArray(form.case_files) && form.case_files.length > 0;
+            const hasOrderDate = !!(form.sales_order_date || form.internal_order_date);
+            const allClean = !hasStatus && !hasPayMark && !hasFiles && !hasOrderDate;
+
+            const btnStyle = (active) => ({
+              padding: '6px 12px', fontSize: 12, borderRadius: 4, fontWeight: 600,
+              background: active ? 'transparent' : 'var(--surface-2)',
+              border: `1px solid ${active ? 'var(--danger)' : 'var(--border)'}`,
+              color: active ? 'var(--danger)' : 'var(--text-muted)',
+              cursor: active ? 'pointer' : 'not-allowed',
+              opacity: active ? 1 : 0.5
+            });
+
+            return (
+              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', marginBottom: 8, letterSpacing: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  🛠 管理員快速清理工具列
+                  {allClean && <span style={{ fontSize: 10, color: 'var(--success)', fontWeight: 600 }}>· 此案件已乾淨</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button disabled={!hasStatus} style={btnStyle(hasStatus)}
+                    title={hasStatus ? `目前狀態：${CASE_STATUS_LABEL[form.status]}` : '狀態不在進階階段，無需更動'}
+                    onClick={() => hasStatus && confirm('變更狀態為「已取消」?', '會把案件狀態改為 cancelled。', async () => {
+                      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled', updated_at: new Date().toISOString() }) });
+                      toast('狀態已改為已取消', 'success');
+                      const updated = { ...modal.data, status: 'cancelled' };
+                      setForm(f => ({ ...f, status: 'cancelled' }));
+                      setDeleteIssues(await checkDownstream(updated));
+                      load();
+                    })}
+                  >改狀態為「已取消」{hasStatus && <span style={{ marginLeft: 4, fontSize: 9 }}>●</span>}</button>
+
+                  <button disabled={!hasPayMark} style={btnStyle(hasPayMark)}
+                    title={hasPayMark ? '清除丈量費/訂金/尾款的收款標記' : '無收款標記'}
+                    onClick={() => hasPayMark && confirm('清除所有收款標記?', '會把丈量費/訂金/尾款的「已收日期」全部清空。', async () => {
+                      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null, updated_at: new Date().toISOString() }) });
+                      toast('收款標記已清除', 'success');
+                      const updated = { ...modal.data, measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null };
+                      setForm(f => ({ ...f, measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null }));
+                      setDeleteIssues(await checkDownstream(updated));
+                      load();
+                    })}
+                  >清除收款標記{hasPayMark && <span style={{ marginLeft: 4, fontSize: 9 }}>●</span>}</button>
+
+                  <button disabled={!hasFiles} style={btnStyle(hasFiles)}
+                    title={hasFiles ? `清除 ${form.case_files.length} 個附件` : '無附件'}
+                    onClick={() => hasFiles && confirm(`清除 ${form.case_files.length} 個附件?`, '會把 case_files 欄位設為空。\n\nSupabase Storage 檔案不會自動刪除。', async () => {
+                      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ case_files: [], updated_at: new Date().toISOString() }) });
+                      toast('附件已清除', 'success');
+                      const updated = { ...modal.data, case_files: [] };
+                      setForm(f => ({ ...f, case_files: [] }));
+                      setDeleteIssues(await checkDownstream(updated));
+                      load();
+                    })}
+                  >清除附件 {hasFiles ? `(${form.case_files.length})` : ''}{hasFiles && <span style={{ marginLeft: 4, fontSize: 9 }}>●</span>}</button>
+
+                  <button disabled={!hasOrderDate} style={btnStyle(hasOrderDate)}
+                    title={hasOrderDate ? '清除業務/內勤下單日期、工廠類型' : '無下單日期'}
+                    onClick={() => hasOrderDate && confirm('清除下單日期?', '會把業務下單日、內勤下單日、工廠類型一併清空。', async () => {
+                      await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ sales_order_date: null, internal_order_date: null, factory_type: null, estimated_arrival: null, updated_at: new Date().toISOString() }) });
+                      toast('下單日期已清除', 'success');
+                      const updated = { ...modal.data, sales_order_date: null, internal_order_date: null, factory_type: null };
+                      setForm(f => ({ ...f, sales_order_date: null, internal_order_date: null, factory_type: null }));
+                      setDeleteIssues(await checkDownstream(updated));
+                      load();
+                    })}
+                  >清除下單日期{hasOrderDate && <span style={{ marginLeft: 4, fontSize: 9 }}>●</span>}</button>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 10, color: 'var(--text-muted)' }}>
+                  紅色 ● = 此案件有資料可清；灰色 = 已乾淨。其他項目（payments、台廠生產、大陸工廠）請到對應頁面用對應按鈕清除。
+                </div>
+              </div>
+            );
+          })()}
           {user?.isAdmin && deleteIssues.length === 0 && (
             <div style={{
               background: 'rgba(34,197,94,.06)',
