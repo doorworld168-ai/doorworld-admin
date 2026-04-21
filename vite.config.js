@@ -9,9 +9,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      stream: 'stream-browserify',
     },
   },
+  optimizeDeps: {
+    include: ['exceljs'],
+  },
   build: {
-    outDir: 'dist'
-  }
+    outDir: 'dist',
+    rollupOptions: {
+      plugins: [],
+    },
+  },
 })
