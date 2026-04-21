@@ -118,13 +118,24 @@ export default function Quotes() {
   }
 
   async function deleteQuote(q) {
-    confirm('確認刪除？', `估價單 ${q.quote_no} 將永久刪除。`, async () => {
+    if (!user?.isAdmin) { toast('僅管理員可刪除估價單', 'error'); return; }
+    const warning = q.case_id
+      ? `估價單 ${q.quote_no} 已關聯案件，仍要刪除？\n\n注意：刪除後案件的 quote_id 會變成空值，但案件本身不會被刪除。`
+      : `估價單 ${q.quote_no} 將永久刪除，此動作無法復原。`;
+    confirm('確認刪除估價單？', warning, async () => {
       try {
         await sbFetch(`quotes?id=eq.${q.id}`, { method: 'DELETE' });
         toast('已刪除', 'success');
         setModal({ open: false, data: null });
         load();
-      } catch (e) { toast(e.message, 'error'); }
+      } catch (e) {
+        // 若 FK 限制阻擋，給更清楚的訊息
+        if (String(e.message).includes('foreign key') || String(e.message).includes('violates')) {
+          toast('刪除失敗：此估價單已關聯案件或其他資料，請先解除關聯', 'error');
+        } else {
+          toast('刪除失敗：' + e.message, 'error');
+        }
+      }
     });
   }
 
@@ -187,10 +198,10 @@ export default function Quotes() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>單號</th><th>客戶</th><th>電話</th><th>產品</th><th>門型</th><th>數量</th><th>總價</th><th>狀態</th><th>建立時間</th></tr></thead>
+          <thead><tr><th>單號</th><th>客戶</th><th>電話</th><th>產品</th><th>門型</th><th>數量</th><th>總價</th><th>狀態</th><th>建立時間</th>{user?.isAdmin && <th style={{ width: 60 }}>操作</th>}</tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan="9"><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
-            : rows.length === 0 ? <tr><td colSpan="9"><div className="empty"><div className="icon">📋</div>沒有估價單</div></td></tr>
+            {loading ? <tr><td colSpan={user?.isAdmin ? 10 : 9}><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
+            : rows.length === 0 ? <tr><td colSpan={user?.isAdmin ? 10 : 9}><div className="empty"><div className="icon">📋</div>沒有估價單</div></td></tr>
             : rows.map(q => {
               const [sl, sc, sb] = STATUS_MAP[q.status] || STATUS_MAP.draft;
               return (
@@ -204,6 +215,18 @@ export default function Quotes() {
                   <td className="price">{fmtPrice(q.total_price)}</td>
                   <td><span className="badge" style={{ background: sb, color: sc, border: `1px solid ${sc}40` }}>{sl}</span></td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{fmtDate(q.created_at)}</td>
+                  {user?.isAdmin && (
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        style={{ padding: '4px 8px', fontSize: 11 }}
+                        onClick={() => deleteQuote(q)}
+                        title="刪除估價單（僅管理員）"
+                      >
+                        🗑 刪除
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -223,7 +246,7 @@ export default function Quotes() {
           <button className="btn btn-ghost" onClick={() => setModal({ open: false, data: null })}>關閉</button>
           <button className="btn btn-ghost" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }} onClick={() => window.open(`${import.meta.env.VITE_N8N_BASE_URL}/webhook/quote-pdf?no=${encodeURIComponent(q.quote_no)}`, '_blank')}>PDF</button>
           <button className="btn btn-ghost" style={{ borderColor: '#22c55e', color: '#22c55e' }} onClick={() => exportQuoteExcel(q)}>Excel</button>
-          <button className="btn btn-danger" onClick={() => deleteQuote(q)}>刪除</button>
+          {user?.isAdmin && <button className="btn btn-danger" onClick={() => deleteQuote(q)}>🗑 刪除</button>}
         </>}>
         {modal.open && <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
