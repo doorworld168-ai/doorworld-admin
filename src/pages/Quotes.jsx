@@ -120,19 +120,20 @@ export default function Quotes() {
 
   async function deleteQuote(q) {
     if (!user?.isAdmin) { toast('僅管理員可刪除估價單', 'error'); return; }
-    const warning = q.case_id
-      ? `估價單 ${q.quote_no} 已關聯案件，仍要刪除？\n\n注意：刪除後案件的 quote_id 會變成空值，但案件本身不會被刪除。`
-      : `估價單 ${q.quote_no} 將永久刪除，此動作無法復原。`;
-    confirm('確認刪除估價單？', warning, async () => {
+    // ★ 防呆：已關聯案件 → 硬性擋住
+    if (q.case_id) {
+      toast(`此估價單已關聯案件，請先到「報價單總表」刪除該案件後再刪除`, 'error');
+      return;
+    }
+    confirm('確認刪除估價單？', `估價單 ${q.quote_no} 將永久刪除，此動作無法復原。`, async () => {
       try {
         await sbFetch(`quotes?id=eq.${q.id}`, { method: 'DELETE' });
         toast('已刪除', 'success');
         setModal({ open: false, data: null });
         load();
       } catch (e) {
-        // 若 FK 限制阻擋，給更清楚的訊息
         if (String(e.message).includes('foreign key') || String(e.message).includes('violates')) {
-          toast('刪除失敗：此估價單已關聯案件或其他資料，請先解除關聯', 'error');
+          toast('刪除失敗：此估價單已被其他資料引用，無法刪除', 'error');
         } else {
           toast('刪除失敗：' + e.message, 'error');
         }
@@ -158,26 +159,30 @@ export default function Quotes() {
   async function bulkDelete() {
     if (!user?.isAdmin) { toast('僅管理員可批量刪除', 'error'); return; }
     if (selectedIds.size === 0) return;
-    const ids = Array.from(selectedIds);
-    const linkedCount = rows.filter(r => selectedIds.has(r.id) && r.case_id).length;
-    const msg = `確定要刪除 ${ids.length} 筆估價單？${linkedCount > 0 ? `\n\n其中 ${linkedCount} 筆已關聯案件，刪除後案件 quote_id 會變空值。` : ''}\n\n此動作無法復原。`;
-    confirm(`批量刪除 ${ids.length} 筆？`, msg, async () => {
+    const allRows = rows.filter(r => selectedIds.has(r.id));
+    const blocked = allRows.filter(r => r.case_id);   // 有關聯案件 → 跳過
+    const deletable = allRows.filter(r => !r.case_id); // 可刪
+    if (deletable.length === 0) {
+      toast(`選取的 ${allRows.length} 筆全部已關聯案件，無法刪除。請先到報價單總表刪除案件`, 'error');
+      return;
+    }
+    const blockedNote = blocked.length > 0 ? `\n\n⚠ 其中 ${blocked.length} 筆已關聯案件會跳過：${blocked.slice(0, 3).map(r => r.quote_no).join(', ')}${blocked.length > 3 ? '...' : ''}` : '';
+    confirm(`批量刪除 ${deletable.length} 筆？`, `將刪除 ${deletable.length} 筆估價單，此動作無法復原。${blockedNote}`, async () => {
       let okCount = 0, failCount = 0;
       const failures = [];
-      for (const id of ids) {
+      for (const q of deletable) {
         try {
-          await sbFetch(`quotes?id=eq.${id}`, { method: 'DELETE' });
+          await sbFetch(`quotes?id=eq.${q.id}`, { method: 'DELETE' });
           okCount++;
         } catch (e) {
           failCount++;
-          const q = rows.find(r => r.id === id);
-          failures.push(q?.quote_no || id);
+          failures.push(q.quote_no || q.id);
         }
       }
       if (failCount === 0) {
-        toast(`已刪除 ${okCount} 筆`, 'success');
+        toast(`已刪除 ${okCount} 筆${blocked.length > 0 ? `（跳過 ${blocked.length} 筆關聯案件）` : ''}`, 'success');
       } else {
-        toast(`成功 ${okCount} 筆，失敗 ${failCount} 筆 (${failures.slice(0, 3).join(', ')}${failures.length > 3 ? '...' : ''})`, failCount === ids.length ? 'error' : 'warning');
+        toast(`成功 ${okCount} 筆，失敗 ${failCount} 筆 (${failures.slice(0, 3).join(', ')}${failures.length > 3 ? '...' : ''})`, failCount === deletable.length ? 'error' : 'warning');
       }
       setSelectedIds(new Set());
       load();

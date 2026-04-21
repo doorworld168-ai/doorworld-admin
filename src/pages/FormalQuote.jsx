@@ -2,10 +2,15 @@ import { useState, useEffect } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
 import { fmtDate, fmtPrice, CASE_STATUS_LABEL, CASE_STATUS_COLOR, CTYPE_SHORT, PAGE_SIZE } from '../api/utils';
 import { useToast } from '../components/UI/Toast';
+import { useConfirm } from '../components/UI/Confirm';
+import { useAuth } from '../contexts/AuthContext';
 import StatCard from '../components/UI/StatCard';
 import { useNavigate } from 'react-router-dom';
 import { printFormalQuote } from '../api/pdf';
 import { exportFormalQuoteExcel } from '../api/excel';
+
+// 「進階」狀態 — 已進入後續流程，不可隨意刪除
+const ADVANCED_STATUSES = ['order_confirmed', 'deposit_paid', 'production', 'shipped', 'arrived', 'installed', 'completed'];
 
 export default function FormalQuote() {
   const [rows, setRows] = useState([]);
@@ -14,7 +19,10 @@ export default function FormalQuote() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const toast = useToast();
+  const confirm = useConfirm();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   async function load() {
@@ -30,6 +38,115 @@ export default function FormalQuote() {
   }
 
   useEffect(() => { load(); }, [search, filter, page]);
+
+  // ── 下游資料檢查（回傳問題清單，空陣列 = 可刪） ──
+  async function checkDownstream(c) {
+    const issues = [];
+    // 1. 收款紀錄
+    try {
+      const pays = await sbFetch(`payments?case_id=eq.${c.id}&select=id&limit=1`);
+      if (pays?.length > 0) issues.push('已有收款紀錄（請到「收款追蹤」清除）');
+    } catch {}
+    // 2. 案件狀態進階
+    if (ADVANCED_STATUSES.includes(c.status)) {
+      issues.push(`案件狀態為「${CASE_STATUS_LABEL[c.status] || c.status}」`);
+    }
+    // 3. 已下單給內勤 / 業務
+    if (c.sales_order_date) issues.push('業務已下單給內勤');
+    if (c.internal_order_date) issues.push('內勤已下單給工廠');
+    // 4. 案件附件
+    if (Array.isArray(c.case_files) && c.case_files.length > 0) {
+      issues.push(`已上傳 ${c.case_files.length} 個附件（請先移除）`);
+    }
+    return issues;
+  }
+
+  // ── 單筆刪除 ──
+  async function deleteOne(c) {
+    if (!user?.isAdmin) { toast('僅管理員可刪除報價單', 'error'); return; }
+    const issues = await checkDownstream(c);
+    if (issues.length > 0) {
+      toast(`此報價單無法刪除：\n${issues.map((x, i) => `${i + 1}. ${x}`).join('\n')}`, 'error');
+      return;
+    }
+    confirm('確認刪除報價單？', `${c.order_no || c.case_no} (${c.customer_name || '—'}) 將永久刪除，此動作無法復原。\n\n相關估價單的 case_id 會被清除，但估價單本身不會刪除。`, async () => {
+      try {
+        // 先解除關聯估價單的 case_id
+        if (c.quote_id) {
+          await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
+        }
+        await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
+        toast('已刪除', 'success');
+        load();
+      } catch (e) {
+        if (String(e.message).includes('foreign key') || String(e.message).includes('violates')) {
+          toast('刪除失敗：此報價單仍被其他資料引用，請先清除', 'error');
+        } else {
+          toast('刪除失敗：' + e.message, 'error');
+        }
+      }
+    });
+  }
+
+  // ── 批量刪除 ──
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    if (selectedIds.size === rows.length && rows.length > 0) setSelectedIds(new Set());
+    else setSelectedIds(new Set(rows.map(r => r.id)));
+  }
+  async function bulkDelete() {
+    if (!user?.isAdmin) { toast('僅管理員可批量刪除', 'error'); return; }
+    if (selectedIds.size === 0) return;
+    const allSelected = rows.filter(r => selectedIds.has(r.id));
+    // 逐筆檢查下游資料
+    const blocked = [];
+    const deletable = [];
+    for (const c of allSelected) {
+      const issues = await checkDownstream(c);
+      if (issues.length > 0) blocked.push({ c, issues });
+      else deletable.push(c);
+    }
+    if (deletable.length === 0) {
+      toast(`選取的 ${allSelected.length} 筆全部有下游資料，無法刪除`, 'error');
+      // 顯示前 3 筆的問題
+      blocked.slice(0, 3).forEach(b => {
+        console.warn(`${b.c.order_no || b.c.case_no}: ${b.issues.join(', ')}`);
+      });
+      return;
+    }
+    const blockedNote = blocked.length > 0
+      ? `\n\n⚠ 其中 ${blocked.length} 筆有下游資料會跳過：\n${blocked.slice(0, 3).map(b => `${b.c.order_no || b.c.case_no}：${b.issues[0]}`).join('\n')}${blocked.length > 3 ? `\n...另 ${blocked.length - 3} 筆` : ''}`
+      : '';
+    confirm(`批量刪除 ${deletable.length} 筆報價單？`, `將永久刪除 ${deletable.length} 筆，無法復原。${blockedNote}`, async () => {
+      let okCount = 0, failCount = 0;
+      const failures = [];
+      for (const c of deletable) {
+        try {
+          if (c.quote_id) {
+            await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
+          }
+          await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
+          okCount++;
+        } catch (e) {
+          failCount++;
+          failures.push(c.order_no || c.case_no || c.id);
+        }
+      }
+      if (failCount === 0) {
+        toast(`已刪除 ${okCount} 筆${blocked.length > 0 ? `（跳過 ${blocked.length} 筆有下游資料）` : ''}`, 'success');
+      } else {
+        toast(`成功 ${okCount} 筆，失敗 ${failCount} 筆 (${failures.slice(0, 3).join(', ')})`, failCount === deletable.length ? 'error' : 'warning');
+      }
+      setSelectedIds(new Set());
+      load();
+    });
+  }
 
   const from = page * PAGE_SIZE + 1, to = Math.min(from + PAGE_SIZE - 1, total);
 
@@ -57,16 +174,46 @@ export default function FormalQuote() {
         <input className="search-box" placeholder="搜尋單號、客戶..." value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} style={{ width: 250 }} />
         <button className="btn btn-ghost" onClick={load}>↻</button>
       </div>
+
+      {/* 批量操作 bar — 僅管理員、有勾選時顯示 */}
+      {user?.isAdmin && selectedIds.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+          background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)',
+          borderRadius: 'var(--radius)', marginBottom: 10
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)' }}>已選取 {selectedIds.size} 筆</span>
+          <button className="btn btn-danger btn-sm" onClick={bulkDelete} style={{ fontSize: 12 }}>🗑 批量刪除</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSelectedIds(new Set())} style={{ fontSize: 12, marginLeft: 'auto' }}>取消選取</button>
+        </div>
+      )}
+
       <div className="table-wrap">
         <table>
-          <thead><tr><th>訂單編號</th><th>客戶</th><th>型態</th><th>業務</th><th>報價金額</th><th>總價</th><th>狀態</th><th>建立</th><th style={{ width: 50 }}>PDF</th></tr></thead>
+          <thead><tr>
+            {user?.isAdmin && (
+              <th style={{ width: 36, textAlign: 'center' }}>
+                <input type="checkbox" checked={rows.length > 0 && selectedIds.size === rows.length}
+                  onChange={toggleSelectAll} style={{ accentColor: 'var(--gold)', cursor: 'pointer' }} title="全選" />
+              </th>
+            )}
+            <th>訂單編號</th><th>客戶</th><th>型態</th><th>業務</th><th>報價金額</th><th>總價</th><th>狀態</th><th>建立</th>
+            <th style={{ width: 100 }}>操作</th>
+          </tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan="9"><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
-            : rows.length === 0 ? <tr><td colSpan="9"><div className="empty"><div className="icon">📋</div>無資料</div></td></tr>
+            {loading ? <tr><td colSpan={user?.isAdmin ? 10 : 9}><div className="loading"><div className="spinner" /><br />載入中...</div></td></tr>
+            : rows.length === 0 ? <tr><td colSpan={user?.isAdmin ? 10 : 9}><div className="empty"><div className="icon">📋</div>無資料</div></td></tr>
             : rows.map(c => {
               const st = CASE_STATUS_COLOR[c.status] || CASE_STATUS_COLOR.new;
+              const isSelected = selectedIds.has(c.id);
               return (
-                <tr key={c.id}>
+                <tr key={c.id} style={{ background: isSelected ? 'rgba(239,68,68,.05)' : undefined }}>
+                  {user?.isAdmin && (
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(c.id)}
+                        style={{ accentColor: 'var(--gold)', cursor: 'pointer' }} />
+                    </td>
+                  )}
                   <td><strong style={{ fontFamily: 'monospace', fontSize: 11 }}>{c.order_no || c.case_no || '—'}</strong></td>
                   <td>{c.customer_name || '—'}</td>
                   <td style={{ fontSize: 11 }}>{CTYPE_SHORT[c.customer_type] || c.customer_type || '—'}</td>
@@ -76,8 +223,11 @@ export default function FormalQuote() {
                   <td><span className="badge" style={{ background: st.bg, color: st.color }}>{CASE_STATUS_LABEL[c.status] || c.status}</span></td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(c.created_at)}</td>
                   <td style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={() => printFormalQuote(c)} title="列印報價單 PDF" style={{ background: 'transparent', border: '1px solid var(--gold)', borderRadius: 4, padding: '4px 9px', cursor: 'pointer', color: 'var(--gold)', fontSize: 11, fontWeight: 600 }}>PDF</button>
-                    <button onClick={() => exportFormalQuoteExcel(c)} title="匯出報價單 Excel" style={{ background: 'transparent', border: '1px solid #22c55e', borderRadius: 4, padding: '4px 9px', cursor: 'pointer', color: '#22c55e', fontSize: 11, fontWeight: 600 }}>XLS</button>
+                    <button onClick={() => printFormalQuote(c)} title="列印 PDF" style={{ background: 'transparent', border: '1px solid var(--gold)', borderRadius: 4, padding: '4px 9px', cursor: 'pointer', color: 'var(--gold)', fontSize: 11, fontWeight: 600 }}>PDF</button>
+                    <button onClick={() => exportFormalQuoteExcel(c)} title="匯出 Excel" style={{ background: 'transparent', border: '1px solid #22c55e', borderRadius: 4, padding: '4px 9px', cursor: 'pointer', color: '#22c55e', fontSize: 11, fontWeight: 600 }}>XLS</button>
+                    {user?.isAdmin && (
+                      <button onClick={() => deleteOne(c)} title="刪除（僅管理員）" style={{ background: 'transparent', border: '1px solid var(--danger)', borderRadius: 4, padding: '4px 9px', cursor: 'pointer', color: 'var(--danger)', fontSize: 11, fontWeight: 600 }}>🗑</button>
+                    )}
                   </td>
                 </tr>
               );
