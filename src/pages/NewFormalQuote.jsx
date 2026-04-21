@@ -46,6 +46,7 @@ export default function NewFormalQuote() {
   const [quotes, setQuotes] = useState([]);
   const [accessories, setAccessories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [colorCards, setColorCards] = useState([]);
   const [showProducts, setShowProducts] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -98,6 +99,7 @@ export default function NewFormalQuote() {
     sbFetch('staff?select=display_name&is_active=eq.true').then(d => setStaffList((d || []).map(s => s.display_name))).catch(() => {});
     sbFetch('quotes?select=*&status=neq.cancelled&order=created_at.desc&limit=100').then(d => setQuotes(d || [])).catch(() => {});
     sbFetch('accessories?select=*&is_active=eq.true&order=category.asc,sort_order.asc').then(d => setAccessories(d || [])).catch(() => {});
+    sbFetch('color_cards?select=code,alt_code,name_en,name_zh,image_url&is_active=eq.true&order=sort_order.asc').then(d => setColorCards(d || [])).catch(() => {});
     // Auto seq
     loadNextSeq(form.region, form.category, form.year, form.month).then(seq => setForm(f => ({ ...f, seq })));
   }, []);
@@ -434,7 +436,19 @@ export default function NewFormalQuote() {
               <div className="form-group"><label>框厚 (可空白)</label><input value={form.frameThick} onChange={e => setForm(f => ({ ...f, frameThick: e.target.value }))} placeholder="例：50mm" /></div>
               <div className="form-group"><label>扇厚 (可空白)</label><input value={form.panelThick} onChange={e => setForm(f => ({ ...f, panelThick: e.target.value }))} placeholder="例：45mm" /></div>
               <div className="form-group"><label>藝術框 (顯示編號)</label><input value={form.artFrame} onChange={e => setForm(f => ({ ...f, artFrame: e.target.value }))} placeholder="編號或無" /></div>
-              <div className="form-group"><label>門扇顏色 / 色卡編號</label><input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} /></div>
+              <div className="form-group"><label>門扇顏色 / 色卡編號</label>
+                <select value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={inputStyle}>
+                  <option value="">未指定</option>
+                  {colorCards.map(c => (
+                    <option key={c.code} value={c.code}>
+                      {c.code}{c.alt_code ? ` / ${c.alt_code}` : ''} — {c.name_zh || c.name_en || ''}
+                    </option>
+                  ))}
+                </select>
+                {form.color && colorCards.find(c => c.code === form.color)?.image_url && (
+                  <img src={colorCards.find(c => c.code === form.color).image_url} alt={form.color} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4, marginTop: 6, border: '1px solid var(--border)' }} />
+                )}
+              </div>
               <div className="form-group"><label>門鎖樣式 / 編號</label><input value={form.lockStyle} onChange={e => setForm(f => ({ ...f, lockStyle: e.target.value }))} /></div>
               <div className="form-group"><label>圖號</label><input value={form.drawingNo} onChange={e => setForm(f => ({ ...f, drawingNo: e.target.value }))} /></div>
               <div className="form-group"><label>門樘數量</label><input type="number" value={form.frameCount} onChange={e => setForm(f => ({ ...f, frameCount: e.target.value }))} placeholder="預設同數量" /></div>

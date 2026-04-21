@@ -33,6 +33,7 @@ const NAV_ITEMS = [
   { path: '/products', label: '產品管理', icon: 'door_front', perm: 'products' },
   { path: '/service', label: '施工費用', icon: 'build', perm: 'service' },
   { path: '/accessories', label: '五金配件', icon: 'hardware' },
+  { path: '/colors', label: '色卡管理', icon: 'palette' },
   { path: '/staff', label: '員工帳號', icon: 'shield_person', adminOnly: true },
   { path: '/aiprompt', label: 'AI 提示詞', icon: 'psychology' },
 ];
