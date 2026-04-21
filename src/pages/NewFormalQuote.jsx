@@ -47,6 +47,8 @@ export default function NewFormalQuote() {
   const [accessories, setAccessories] = useState([]);
   const [products, setProducts] = useState([]);
   const [colorCards, setColorCards] = useState([]);
+  const [panelStyles, setPanelStyles] = useState([]);
+  const [linkedCase, setLinkedCase] = useState(null); // 關聯的 case (含丈量資料)
   const [showProducts, setShowProducts] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -100,6 +102,7 @@ export default function NewFormalQuote() {
     sbFetch('quotes?select=*&status=neq.cancelled&order=created_at.desc&limit=100').then(d => setQuotes(d || [])).catch(() => {});
     sbFetch('accessories?select=*&is_active=eq.true&order=category.asc,sort_order.asc').then(d => setAccessories(d || [])).catch(() => {});
     sbFetch('color_cards?select=code,alt_code,name_en,name_zh,image_url&is_active=eq.true&order=sort_order.asc').then(d => setColorCards(d || [])).catch(() => {});
+    sbFetch('panel_styles?select=*&is_active=eq.true&order=sort_order.asc').then(d => setPanelStyles(d || [])).catch(() => {});
     // Auto seq
     loadNextSeq(form.region, form.category, form.year, form.month).then(seq => setForm(f => ({ ...f, seq })));
   }, []);
@@ -134,9 +137,9 @@ export default function NewFormalQuote() {
     setCalcResult({ unitPrice, qty, discount, doorSubtotal, discounted, addonTotal, addonLines, installFee, total, deposit, balance });
   }, [form.unitPrice, form.qty, form.discount, form.installFee, form.addonItems]);
 
-  function selectQuote(id) {
+  async function selectQuote(id) {
     setForm(f => ({ ...f, quoteId: id }));
-    if (!id) { setImportedQuote(null); return; }
+    if (!id) { setImportedQuote(null); setLinkedCase(null); return; }
     const q = quotes.find(r => r.id === id);
     if (!q) return;
     setImportedQuote(q);
@@ -154,6 +157,24 @@ export default function NewFormalQuote() {
       setProductSearch(q.product_code);
       searchProducts(q.product_code);
     }
+    // 嘗試找關聯的 case 取得丈量資料
+    if (q.case_id) {
+      try {
+        const cases = await sbFetch(`cases?id=eq.${q.case_id}&select=id,actual_width_cm,actual_height_cm,measure_date,measure_staff,measured_at`);
+        if (cases && cases[0]) setLinkedCase(cases[0]);
+      } catch {}
+    }
+  }
+
+  // 「從丈量資料填入」按鈕
+  function fillFromMeasurement() {
+    if (!linkedCase) return;
+    setForm(f => ({
+      ...f,
+      width: linkedCase.actual_width_cm ? String(linkedCase.actual_width_cm * 10) : f.width,
+      height: linkedCase.actual_height_cm ? String(linkedCase.actual_height_cm * 10) : f.height
+    }));
+    toast(`已填入丈量尺寸 ${linkedCase.actual_width_cm}×${linkedCase.actual_height_cm} cm`, 'success');
   }
 
   function searchProducts(q) {
@@ -299,40 +320,55 @@ export default function NewFormalQuote() {
   // Accessories rendering
   const isFire = form.fireType !== 'none';
 
+  // ─── 共用元件 ─────────────────────────────────────────
+  const sectionStyle = { background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 14 };
+  const sectionTitle = { fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 };
+
+  // 前板/背板選項過濾
+  const frontPanelOptions = panelStyles.filter(p => p.position === 'front' || p.position === 'both');
+  const backPanelOptions  = panelStyles.filter(p => p.position === 'back'  || p.position === 'both');
+
   return (
     <div>
       <div className="page-header">
-        <div className="page-title-wrap"><div className="page-title">新增報價單</div><div className="page-subtitle">建立正式報價 - 選配五金、計算金額、產出報價單號</div></div>
+        <div className="page-title-wrap"><div className="page-title">新增報價單</div><div className="page-subtitle">分區塊輸入：基本資訊 → 門款 → 尺寸 → 外觀 → 配件 → 金額</div></div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        {/* Left column */}
+
+        {/* ═══════════════ 左側欄 ═══════════════ */}
         <div>
-          {/* Import from estimate */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>匯入估價單</div>
+
+          {/* 1. 匯入估價單 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>upload</span>匯入估價單</div>
             <select value={form.quoteId} onChange={e => selectQuote(e.target.value)} style={inputStyle}>
               <option value="">選擇估價單（不匯入）</option>
               {quotes.map(q => <option key={q.id} value={q.id}>{q.quote_no || '—'} — {q.customer_name || '未知'} ${(q.total_price || 0).toLocaleString()}</option>)}
             </select>
-            {importedQuote && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--success)' }}>已匯入: <strong>{importedQuote.quote_no}</strong> — {importedQuote.customer_name} {fmtPrice(importedQuote.total_price)}</div>}
+            {importedQuote && (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--success)' }}>
+                已匯入: <strong>{importedQuote.quote_no}</strong> — {importedQuote.customer_name} {fmtPrice(importedQuote.total_price)}
+                {linkedCase && <span style={{ marginLeft: 8, color: 'var(--gold)' }}>· 已找到丈量資料 ({linkedCase.actual_width_cm}×{linkedCase.actual_height_cm} cm)</span>}
+              </div>
+            )}
           </div>
 
-          {/* Quote number */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>報價單號</div>
+          {/* 2. 報價單編號 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>tag</span>報價單編號</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
               <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>區域</label><select value={form.region} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, region: v })); loadNextSeq(v, form.category, form.year, form.month).then(s => setForm(f => ({ ...f, seq: s }))); }} style={inputStyle}><option value="NTPC">NTPC</option><option value="TPE">TPE</option><option value="TYC">TYC</option><option value="HSC">HSC</option></select></div>
               <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>分類</label><select value={form.category} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, category: v })); loadNextSeq(form.region, v, form.year, form.month).then(s => setForm(f => ({ ...f, seq: s }))); }} style={inputStyle}><option value="D">D</option><option value="S">S</option><option value="B">B</option><option value="C">C</option></select></div>
               <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>月份</label><input value={form.month} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, month: v })); if (v.length === 2) loadNextSeq(form.region, form.category, form.year, v).then(s => setForm(f => ({ ...f, seq: s }))); }} style={inputStyle} maxLength={2} /></div>
-              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>序號</label><input value={form.seq} onChange={e => setForm(f => ({ ...f, seq: e.target.value }))} style={inputStyle} readOnly title="自動產生，每月從 001 開始" /></div>
+              <div><label style={{ fontSize: 10, color: 'var(--text-muted)' }}>序號</label><input value={form.seq} onChange={e => setForm(f => ({ ...f, seq: e.target.value }))} style={inputStyle} readOnly /></div>
             </div>
             <div style={{ marginTop: 6, fontSize: 12, color: 'var(--gold)', fontFamily: 'monospace' }}>{form.region}-{form.category}-{form.year}-{form.month}-{form.seq || '001'}</div>
           </div>
 
-          {/* Customer info */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>客戶資料</div>
+          {/* 3. 客戶資料 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>person</span>客戶資料</div>
             <div className="form-grid">
               <div className="form-group"><label>聯絡人</label><input value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} /></div>
               <div className="form-group"><label>電話</label><input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
@@ -342,12 +378,19 @@ export default function NewFormalQuote() {
                   <option value="">選擇</option><option value="D">設計師</option><option value="C">直客</option><option value="B">建商</option><option value="A">代理</option>
                 </select>
               </div>
-              <div className="form-group"><label>業務人員</label>
+              <div className="form-group full"><label>業務人員</label>
                 <select value={form.salesPerson} onChange={e => setForm(f => ({ ...f, salesPerson: e.target.value }))} style={inputStyle}>
                   <option value="">選擇業務人員</option>
                   {staffList.map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
               </div>
+            </div>
+          </div>
+
+          {/* 4. 安裝地點 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>location_on</span>安裝地點</div>
+            <div className="form-grid">
               <div className="form-group"><label>縣市</label>
                 <select value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value, dist: '' }))} style={inputStyle}>
                   <option value="">縣市</option>
@@ -361,12 +404,20 @@ export default function NewFormalQuote() {
                 </select>
               </div>
               <div className="form-group full"><label>地址</label><input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="路/街/巷/弄/號/樓" /></div>
+              <div className="form-group"><label>樓層</label><input type="number" value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
+              <div className="form-group"><label>電梯</label>
+                <select value={form.hasElevator ? '1' : '0'} onChange={e => setForm(f => ({ ...f, hasElevator: e.target.value === '1' }))} style={inputStyle}>
+                  <option value="1">有電梯</option><option value="0">無電梯</option>
+                </select>
+              </div>
+              <div className="form-group full"><label>搬運費用 (NT$)</label><input type="number" value={form.deliveryFee} onChange={e => setForm(f => ({ ...f, deliveryFee: e.target.value }))} placeholder="0=無，桃園以北適用" /></div>
             </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>* 桃園以北適用，新竹以南/宜蘭/花蓮/台東另議</div>
           </div>
 
-          {/* Product */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>產品規格</div>
+          {/* 5. 門款基本 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>door_front</span>門款基本</div>
             <div style={{ position: 'relative', marginBottom: 10 }}>
               <input value={productSearch} onChange={e => searchProducts(e.target.value)} placeholder="搜尋產品代碼或名稱..." style={inputStyle} />
               {showProducts && products.length > 0 && (
@@ -374,7 +425,8 @@ export default function NewFormalQuote() {
                   {products.map(p => (
                     <div key={p.id} onClick={() => selectProduct(p)} style={{ padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
                       onMouseOver={e => e.currentTarget.style.background = 'rgba(201,162,39,0.08)'} onMouseOut={e => e.currentTarget.style.background = ''}>
-                      <strong>{p.full_code}</strong> <span style={{ color: 'var(--text-muted)' }}>{p.name || ''}</span>
+                      {p.thumbnail_url && <img src={p.thumbnail_url} alt="" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 3 }} />}
+                      <div><strong>{p.full_code}</strong> <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{p.name || ''}</span></div>
                     </div>
                   ))}
                 </div>
@@ -387,45 +439,38 @@ export default function NewFormalQuote() {
                   <option value="single">單門</option><option value="mother">子母門</option><option value="double">雙開門</option>
                 </select>
               </div>
-              <div className="form-group"><label>防火</label>
+              <div className="form-group"><label>防火 / 隔音</label>
                 <select value={form.fireType} onChange={e => setForm(f => ({ ...f, fireType: e.target.value }))} style={inputStyle}>
                   {FIRE_TYPES.map(ft => <option key={ft.value} value={ft.value}>{ft.label}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label>寬度 (mm)</label><input type="number" value={form.width} onChange={e => setForm(f => ({ ...f, width: e.target.value }))} /></div>
-              <div className="form-group"><label>高度 (mm)</label><input type="number" value={form.height} onChange={e => setForm(f => ({ ...f, height: e.target.value }))} /></div>
               <div className="form-group"><label>數量</label><input type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} min="1" /></div>
               <div className="form-group"><label>交貨天數</label><input type="number" value={form.deliveryDays} onChange={e => setForm(f => ({ ...f, deliveryDays: e.target.value }))} /></div>
             </div>
           </div>
 
-          {/* Special requirements */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>特殊需求</div>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              {[['none', '無'], ['demolish', '拆舊'], ['recycle', '回收'], ['occupy', '佔框'], ['wet', '濕式施工'], ['dry', '乾式包框'], ['frame', '站框']].map(([k, l]) => (
-                <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={reqs[k]} onChange={e => setReqs(r => ({ ...r, [k]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />{l}
-                </label>
-              ))}
+          {/* 6. 尺寸規格（含丈量自動填入） */}
+          <div style={sectionStyle}>
+            <div style={{ ...sectionTitle, justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>straighten</span>尺寸規格 (mm)
+              </span>
+              {linkedCase && (linkedCase.actual_width_cm || linkedCase.actual_height_cm) && (
+                <button type="button" onClick={fillFromMeasurement} style={{ padding: '4px 10px', fontSize: 11, background: 'var(--gold-dim)', color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}>
+                  ↓ 從丈量資料填入 ({linkedCase.actual_width_cm}×{linkedCase.actual_height_cm} cm)
+                </button>
+              )}
             </div>
-          </div>
-
-          {/* 完整門體規格（範本對應） */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>門體規格詳細（公司報價單範本）</div>
             <div className="form-grid">
-              <div className="form-group"><label>材質 / 工藝</label><input value={form.material} onChange={e => setForm(f => ({ ...f, material: e.target.value }))} placeholder="例：鋼板烤漆" /></div>
-              <div className="form-group"><label>前板樣式</label><input value={form.frontPanelStyle} onChange={e => setForm(f => ({ ...f, frontPanelStyle: e.target.value }))} placeholder="編號或名稱" /></div>
-              <div className="form-group"><label>背板樣式</label><input value={form.backPanelStyle} onChange={e => setForm(f => ({ ...f, backPanelStyle: e.target.value }))} placeholder="編號或名稱" /></div>
-              <div className="form-group"><label>門開方向</label>
+              <div className="form-group"><label>門洞寬 (mm)</label><input type="number" value={form.width} onChange={e => setForm(f => ({ ...f, width: e.target.value }))} placeholder="例：1000" /></div>
+              <div className="form-group"><label>門洞高 (mm)</label><input type="number" value={form.height} onChange={e => setForm(f => ({ ...f, height: e.target.value }))} placeholder="例：2100" /></div>
+              <div className="form-group"><label>框厚 (可空白)</label><input value={form.frameThick} onChange={e => setForm(f => ({ ...f, frameThick: e.target.value }))} placeholder="例：50mm" /></div>
+              <div className="form-group"><label>扇厚 (可空白)</label><input value={form.panelThick} onChange={e => setForm(f => ({ ...f, panelThick: e.target.value }))} placeholder="例：45mm" /></div>
+              <div className="form-group"><label>圖號</label><input value={form.drawingNo} onChange={e => setForm(f => ({ ...f, drawingNo: e.target.value }))} /></div>
+              <div className="form-group"><label>門樘數量</label><input type="number" value={form.frameCount} onChange={e => setForm(f => ({ ...f, frameCount: e.target.value }))} placeholder="預設同數量" /></div>
+              <div className="form-group"><label>門開方向 <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(人在外向內看)</span></label>
                 <select value={form.direction} onChange={e => setForm(f => ({ ...f, direction: e.target.value }))} style={inputStyle}>
                   <option value="">未指定</option><option value="左外開">左外開</option><option value="左內開">左內開</option><option value="右外開">右外開</option><option value="右內開">右內開</option>
-                </select>
-              </div>
-              <div className="form-group"><label>運送安裝方式</label>
-                <select value={form.installMethod} onChange={e => setForm(f => ({ ...f, installMethod: e.target.value }))} style={inputStyle}>
-                  {INSTALL_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
               <div className="form-group"><label>交貨方式</label>
@@ -433,10 +478,51 @@ export default function NewFormalQuote() {
                   <option value="框扇同時">框扇同時</option><option value="先框後扇">先框後扇</option>
                 </select>
               </div>
-              <div className="form-group"><label>框厚 (可空白)</label><input value={form.frameThick} onChange={e => setForm(f => ({ ...f, frameThick: e.target.value }))} placeholder="例：50mm" /></div>
-              <div className="form-group"><label>扇厚 (可空白)</label><input value={form.panelThick} onChange={e => setForm(f => ({ ...f, panelThick: e.target.value }))} placeholder="例：45mm" /></div>
+            </div>
+          </div>
+
+          {/* 7. 外觀設計（含圖片下拉） */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>palette</span>外觀設計</div>
+            <div className="form-grid">
+              <div className="form-group full"><label>材質 / 工藝</label><input value={form.material} onChange={e => setForm(f => ({ ...f, material: e.target.value }))} placeholder="例：鋼板烤漆" /></div>
+
+              {/* 前板樣式 — 圖片下拉 */}
+              <div className="form-group">
+                <label>前板樣式</label>
+                <select value={form.frontPanelStyle} onChange={e => setForm(f => ({ ...f, frontPanelStyle: e.target.value }))} style={inputStyle}>
+                  <option value="">未指定</option>
+                  {frontPanelOptions.map(p => (
+                    <option key={p.code} value={p.code}>{p.code} — {p.name_zh || p.name_en || ''}</option>
+                  ))}
+                </select>
+                {form.frontPanelStyle && frontPanelOptions.find(p => p.code === form.frontPanelStyle)?.image_url && (
+                  <img src={frontPanelOptions.find(p => p.code === form.frontPanelStyle).image_url} alt={form.frontPanelStyle} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4, marginTop: 6, border: '1px solid var(--border)' }} />
+                )}
+                {frontPanelOptions.length === 0 && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>尚未建立前板樣式 → <a href="/panelstyles" style={{ color: 'var(--gold)' }}>去新增</a></div>}
+              </div>
+
+              {/* 背板樣式 — 圖片下拉 */}
+              <div className="form-group">
+                <label>背板樣式</label>
+                <select value={form.backPanelStyle} onChange={e => setForm(f => ({ ...f, backPanelStyle: e.target.value }))} style={inputStyle}>
+                  <option value="">未指定</option>
+                  {backPanelOptions.map(p => (
+                    <option key={p.code} value={p.code}>{p.code} — {p.name_zh || p.name_en || ''}</option>
+                  ))}
+                </select>
+                {form.backPanelStyle && backPanelOptions.find(p => p.code === form.backPanelStyle)?.image_url && (
+                  <img src={backPanelOptions.find(p => p.code === form.backPanelStyle).image_url} alt={form.backPanelStyle} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4, marginTop: 6, border: '1px solid var(--border)' }} />
+                )}
+                {backPanelOptions.length === 0 && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>尚未建立背板樣式 → <a href="/panelstyles" style={{ color: 'var(--gold)' }}>去新增</a></div>}
+              </div>
+
+              {/* 藝術框 */}
               <div className="form-group"><label>藝術框 (顯示編號)</label><input value={form.artFrame} onChange={e => setForm(f => ({ ...f, artFrame: e.target.value }))} placeholder="編號或無" /></div>
-              <div className="form-group"><label>門扇顏色 / 色卡編號</label>
+
+              {/* 色卡 — 圖片下拉 */}
+              <div className="form-group">
+                <label>門扇顏色 / 色卡</label>
                 <select value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={inputStyle}>
                   <option value="">未指定</option>
                   {colorCards.map(c => (
@@ -446,26 +532,138 @@ export default function NewFormalQuote() {
                   ))}
                 </select>
                 {form.color && colorCards.find(c => c.code === form.color)?.image_url && (
-                  <img src={colorCards.find(c => c.code === form.color).image_url} alt={form.color} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4, marginTop: 6, border: '1px solid var(--border)' }} />
+                  <img src={colorCards.find(c => c.code === form.color).image_url} alt={form.color} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4, marginTop: 6, border: '1px solid var(--border)' }} />
                 )}
               </div>
-              <div className="form-group"><label>門鎖樣式 / 編號</label><input value={form.lockStyle} onChange={e => setForm(f => ({ ...f, lockStyle: e.target.value }))} /></div>
-              <div className="form-group"><label>圖號</label><input value={form.drawingNo} onChange={e => setForm(f => ({ ...f, drawingNo: e.target.value }))} /></div>
-              <div className="form-group"><label>門樘數量</label><input type="number" value={form.frameCount} onChange={e => setForm(f => ({ ...f, frameCount: e.target.value }))} placeholder="預設同數量" /></div>
-              <div className="form-group"><label>樓層</label><input type="number" value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
-              <div className="form-group"><label>電梯</label>
-                <select value={form.hasElevator ? '1' : '0'} onChange={e => setForm(f => ({ ...f, hasElevator: e.target.value === '1' }))} style={inputStyle}>
-                  <option value="1">有電梯</option><option value="0">無電梯</option>
-                </select>
-              </div>
-              <div className="form-group"><label>搬運費用 (NT$)</label><input type="number" value={form.deliveryFee} onChange={e => setForm(f => ({ ...f, deliveryFee: e.target.value }))} placeholder="0=無" /></div>
+
+              {/* 鎖樣式 */}
+              <div className="form-group full"><label>門鎖樣式 / 編號</label><input value={form.lockStyle} onChange={e => setForm(f => ({ ...f, lockStyle: e.target.value }))} /></div>
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>* 桃園以北適用，新竹以南/宜蘭/花蓮/台東另議</div>
           </div>
 
-          {/* 付款方式 */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>付款方式（範本下方訂單金額區）</div>
+          {/* 8. 特殊需求 + 安裝方式 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>build</span>特殊需求 / 安裝方式</div>
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <label>運送安裝方式</label>
+              <select value={form.installMethod} onChange={e => setForm(f => ({ ...f, installMethod: e.target.value }))} style={inputStyle}>
+                {INSTALL_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>特殊需求 (可複選)</label>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              {[['none', '無'], ['demolish', '拆舊'], ['recycle', '回收'], ['occupy', '佔框'], ['wet', '濕式施工'], ['dry', '乾式包框'], ['frame', '站框']].map(([k, l]) => (
+                <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={reqs[k]} onChange={e => setReqs(r => ({ ...r, [k]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />{l}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ═══════════════ 右側欄 ═══════════════ */}
+        <div>
+
+          {/* 9. 五金配件（圖片+文字） */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>hardware</span>五金配件</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {ACC_CATS.map(cat => {
+                const items = accessories.filter(a => a.category === cat);
+                const allStd = items.filter(a => a.type === 'standard');
+                const upgItems = items.filter(a => a.type === 'upgrade');
+                const fireStd = allStd.filter(a => a.fire_only);
+                const regularStd = allStd.filter(a => !a.fire_only);
+                const activeStd = isFire && fireStd.length ? fireStd : regularStd;
+                const switchedToFire = isFire && fireStd.length > 0;
+                const stdItems = activeStd; // array
+                const selectedUpgName = accState[cat]?.selectedUpgrade || (upgItems[0]?.name || '');
+                const selectedUpg = upgItems.find(u => u.name === selectedUpgName);
+                const useUpgrade = accState[cat]?.useUpgrade || false;
+
+                return (
+                  <div key={cat} style={{ padding: '10px 12px', background: 'var(--surface-2)', border: `1px solid ${switchedToFire ? 'rgba(239,68,68,.25)' : 'var(--border)'}`, borderRadius: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', flex: 1 }}>
+                        {ACC_LABELS[cat]}
+                        {switchedToFire && <span style={{ fontSize: 9, color: 'var(--danger)', fontWeight: 600, marginLeft: 6 }}>防火標配</span>}
+                      </span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: upgItems.length ? 'pointer' : 'not-allowed', color: useUpgrade ? 'var(--gold)' : 'var(--text-muted)' }}>
+                        <input type="checkbox" checked={useUpgrade} onChange={e => setAccState(s => ({ ...s, [cat]: { ...s[cat], useUpgrade: e.target.checked } }))} disabled={!upgItems.length} style={{ accentColor: 'var(--gold)' }} />加購選配
+                      </label>
+                    </div>
+
+                    {/* 標配（圖片+文字） */}
+                    <div style={{ marginBottom: useUpgrade ? 8 : 0 }}>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4 }}>標配{switchedToFire ? ' (防火)' : ''}</div>
+                      {stdItems.length === 0 ? <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</div> : (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {stdItems.map(a => (
+                            <div key={a.id || a.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', background: switchedToFire ? 'rgba(239,68,68,.06)' : 'var(--surface-high)', border: `1px solid ${switchedToFire ? 'rgba(239,68,68,.2)' : 'var(--border)'}`, borderRadius: 4 }}>
+                              {a.image_url
+                                ? <img src={a.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 3 }} />
+                                : <div style={{ width: 28, height: 28, background: 'var(--surface-2)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--text-muted)' }}>—</div>
+                              }
+                              <span style={{ fontSize: 12, fontWeight: 600, color: switchedToFire ? 'var(--danger)' : 'var(--text)' }}>{a.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 加購選配 dropdown */}
+                    {useUpgrade && upgItems.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4 }}>加購選配</div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <select value={selectedUpgName} onChange={e => setAccState(s => ({ ...s, [cat]: { ...s[cat], selectedUpgrade: e.target.value } }))} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px', flex: 1 }}>
+                            {upgItems.map(a => <option key={a.name} value={a.name}>{a.name}{a.price ? ` ($${a.price.toLocaleString()})` : ''}</option>)}
+                          </select>
+                          {selectedUpg?.image_url && <img src={selectedUpg.image_url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 10. 金額計算 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>calculate</span>金額計算</div>
+            <div className="form-grid">
+              <div className="form-group"><label>門扇單價</label><input type="number" value={form.unitPrice} onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))} /></div>
+              <div className="form-group"><label>折扣</label>
+                <select value={form.discount} onChange={e => setForm(f => ({ ...f, discount: e.target.value }))} style={inputStyle}>
+                  <option value="1">無折扣</option><option value="0.95">95折</option><option value="0.9">9折</option><option value="0.85">85折</option><option value="0.8">8折</option>
+                </select>
+              </div>
+              <div className="form-group"><label>安裝費</label><input type="number" value={form.installFee} onChange={e => setForm(f => ({ ...f, installFee: e.target.value }))} /></div>
+              <div className="form-group full"><label>附加施工費明細</label><textarea value={form.addonItems} onChange={e => setForm(f => ({ ...f, addonItems: e.target.value }))} placeholder="格式: 項目名稱 金額&#10;例: 拆舊門 3000" style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} /></div>
+            </div>
+
+            <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+              {c.unitPrice ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>門扇單價 x {c.qty}</span><span style={{ fontWeight: 600 }}>{fmtPrice(c.doorSubtotal)}</span></div>
+                  {c.discount < 1 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>折扣 ({Math.round(c.discount * 100)}%)</span><span style={{ fontWeight: 600 }}>{fmtPrice(c.discounted)}</span></div>}
+                  {(c.addonLines || []).map((a, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>{a[0]}</span><span style={{ fontWeight: 600 }}>{fmtPrice(a[1])}</span></div>)}
+                  {c.installFee > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>安裝費</span><span style={{ fontWeight: 600 }}>{fmtPrice(c.installFee)}</span></div>}
+                </>
+              ) : <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 10 }}>請填寫門扇單價</div>}
+            </div>
+
+            <div style={{ marginTop: 14, background: '#1a1a1a', borderRadius: 'var(--radius)', padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}><span style={{ fontSize: 11, color: 'var(--gold)', letterSpacing: 2 }}>總計</span><span style={{ fontSize: 22, fontWeight: 800, color: 'var(--gold)' }}>{c.total ? fmtPrice(c.total) : '—'}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>訂金 50%</span><span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{c.total ? fmtPrice(c.deposit) : '—'}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>尾款</span><span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{c.total ? fmtPrice(c.balance) : '—'}</span></div>
+            </div>
+          </div>
+
+          {/* 11. 付款方式 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>payments</span>付款方式</div>
             <div className="form-grid">
               <div className="form-group"><label>丈量費用 (NT$)</label><input type="number" value={form.measureFee} onChange={e => setForm(f => ({ ...f, measureFee: e.target.value }))} /></div>
               <div className="form-group"><label>丈量費 收款方式</label>
@@ -485,91 +683,14 @@ export default function NewFormalQuote() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Right column */}
-        <div>
-          {/* Accessories */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>五金配件</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {ACC_CATS.map(cat => {
-                const items = accessories.filter(a => a.category === cat);
-                const allStd = items.filter(a => a.type === 'standard');
-                const upgItems = items.filter(a => a.type === 'upgrade');
-                const fireStd = allStd.filter(a => a.fire_only);
-                const regularStd = allStd.filter(a => !a.fire_only);
-                const activeStd = isFire && fireStd.length ? fireStd : regularStd;
-                const switchedToFire = isFire && fireStd.length > 0;
-                const stdDisplay = activeStd.map(a => a.name).join(', ') || '—';
-
-                return (
-                  <div key={cat} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 70px', gap: 8, alignItems: 'center', padding: '10px 12px', background: 'var(--surface-2)', border: `1px solid ${switchedToFire ? 'rgba(239,68,68,.25)' : 'var(--border)'}`, borderRadius: 3 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)' }}>
-                      {ACC_LABELS[cat]}
-                      {switchedToFire && <div style={{ fontSize: 8, color: 'var(--danger)', fontWeight: 600, marginTop: 2 }}>防火標配</div>}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 2 }}>標配{switchedToFire ? ' (防火)' : ''}</div>
-                      <div style={{ padding: '6px 8px', fontSize: 12, fontWeight: 600, color: switchedToFire ? 'var(--danger)' : 'var(--text)', background: switchedToFire ? 'rgba(239,68,68,.06)' : 'var(--surface-high)', border: `1px solid ${switchedToFire ? 'rgba(239,68,68,.2)' : 'var(--border)'}`, borderRadius: 'var(--radius)' }}>{stdDisplay}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 2 }}>加購選配</div>
-                      {upgItems.length ? (
-                        <select value={accState[cat]?.selectedUpgrade || ''} onChange={e => setAccState(s => ({ ...s, [cat]: { ...s[cat], selectedUpgrade: e.target.value } }))} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px' }}>
-                          {upgItems.map(a => <option key={a.name} value={a.name}>{a.name}{a.price ? ` ($${a.price.toLocaleString()})` : ''}</option>)}
-                        </select>
-                      ) : <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 0' }}>—</div>}
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={accState[cat]?.useUpgrade || false} onChange={e => setAccState(s => ({ ...s, [cat]: { ...s[cat], useUpgrade: e.target.checked } }))} disabled={!upgItems.length} style={{ accentColor: 'var(--gold)' }} /> 加購
-                    </label>
-                  </div>
-                );
-              })}
-            </div>
+          {/* 12. 備註 */}
+          <div style={sectionStyle}>
+            <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>edit_note</span>備註</div>
+            <textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} placeholder="其他補充說明..." />
           </div>
 
-          {/* Pricing */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>金額計算</div>
-            <div className="form-grid">
-              <div className="form-group"><label>門扇單價</label><input type="number" value={form.unitPrice} onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))} /></div>
-              <div className="form-group"><label>折扣</label>
-                <select value={form.discount} onChange={e => setForm(f => ({ ...f, discount: e.target.value }))} style={inputStyle}>
-                  <option value="1">無折扣</option><option value="0.95">95折</option><option value="0.9">9折</option><option value="0.85">85折</option><option value="0.8">8折</option>
-                </select>
-              </div>
-              <div className="form-group"><label>安裝費</label><input type="number" value={form.installFee} onChange={e => setForm(f => ({ ...f, installFee: e.target.value }))} /></div>
-              <div className="form-group full"><label>附加施工費明細</label><textarea value={form.addonItems} onChange={e => setForm(f => ({ ...f, addonItems: e.target.value }))} placeholder="格式: 項目名稱 金額&#10;例: 拆舊門 3000" style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} /></div>
-            </div>
-
-            {/* Price breakdown */}
-            <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-              {c.unitPrice ? (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>門扇單價 x {c.qty}</span><span style={{ fontWeight: 600 }}>{fmtPrice(c.doorSubtotal)}</span></div>
-                  {c.discount < 1 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>折扣 ({Math.round(c.discount * 100)}%)</span><span style={{ fontWeight: 600 }}>{fmtPrice(c.discounted)}</span></div>}
-                  {(c.addonLines || []).map((a, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>{a[0]}</span><span style={{ fontWeight: 600 }}>{fmtPrice(a[1])}</span></div>)}
-                  {c.installFee > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid rgba(201,162,39,0.1)' }}><span style={{ color: 'var(--text-muted)' }}>安裝費</span><span style={{ fontWeight: 600 }}>{fmtPrice(c.installFee)}</span></div>}
-                </>
-              ) : <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 10 }}>請填寫門扇單價</div>}
-            </div>
-
-            {/* Totals */}
-            <div style={{ marginTop: 14, background: '#1a1a1a', borderRadius: 'var(--radius)', padding: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}><span style={{ fontSize: 11, color: 'var(--gold)', letterSpacing: 2 }}>總計</span><span style={{ fontSize: 22, fontWeight: 800, color: 'var(--gold)' }}>{c.total ? fmtPrice(c.total) : '—'}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>訂金 50%</span><span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{c.total ? fmtPrice(c.deposit) : '—'}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>尾款</span><span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{c.total ? fmtPrice(c.balance) : '—'}</span></div>
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
-            <div className="form-group"><label>備註</label><textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} /></div>
-          </div>
-
-          {/* Submit */}
+          {/* 提交 */}
           <button className="btn btn-primary" style={{ width: '100%', padding: 14, fontSize: 16, borderRadius: 14 }} onClick={submit}>儲存報價單</button>
         </div>
       </div>
