@@ -11,6 +11,8 @@ import DateQuickFilter from '../components/UI/DateQuickFilter';
 
 const CTYPE_OPTIONS = [['','選擇'],['S','股東'],['C','直客'],['D','設計師'],['D1','D1(20堂+)'],['D2','D2(60堂+)'],['A','代理商'],['B','建商'],['CC','商會'],['DD','經銷商'],['E','員工'],['G','公機關'],['V','VIP'],['Z','親友'],['X','公司']];
 const SS_KEY = 'cases_filters_v1';
+// 「進階」狀態 — 已進入後續流程，不可隨意刪除
+const ADVANCED_STATUSES = ['order_confirmed', 'deposit_paid', 'production', 'shipped', 'arrived', 'installed', 'completed'];
 
 export default function Cases() {
   const [rows, setRows] = useState([]);
@@ -153,14 +155,84 @@ export default function Cases() {
     if (res?.[0]) openCase(res[0]);
   }
 
+  // ── 下游資料檢查（回傳問題清單，空陣列 = 可刪） ──
+  async function checkDownstream(c) {
+    const issues = [];
+    try {
+      const pays = await sbFetch(`payments?case_id=eq.${c.id}&select=id&limit=1`);
+      if (pays?.length > 0) issues.push('已有收款紀錄（請到「收款追蹤」清除）');
+    } catch {}
+    if (ADVANCED_STATUSES.includes(c.status)) issues.push(`案件狀態為「${CASE_STATUS_LABEL[c.status] || c.status}」`);
+    if (c.sales_order_date) issues.push('業務已下單給內勤');
+    if (c.internal_order_date) issues.push('內勤已下單給工廠');
+    if (Array.isArray(c.case_files) && c.case_files.length > 0) issues.push(`已上傳 ${c.case_files.length} 個附件`);
+    return issues;
+  }
+
   async function deleteCase() {
-    confirm('確定刪除？', `案件 ${form.case_no} 將永久刪除。`, async () => {
+    if (!user?.isAdmin) { toast('僅管理員可刪除案件', 'error'); return; }
+    const c = modal.data;
+    const issues = await checkDownstream(c);
+    if (issues.length > 0) {
+      toast(`此案件無法刪除：\n${issues.map((x, i) => `${i + 1}. ${x}`).join('\n')}`, 'error');
+      return;
+    }
+    confirm('確定刪除案件？', `${c.order_no || c.case_no} (${c.customer_name || '—'}) 將永久刪除，此動作無法復原。\n\n相關估價單的 case_id 會被清除。`, async () => {
       try {
-        await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'DELETE' });
+        await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
+        await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
         toast('已刪除', 'success');
         setModal({ open: false, data: null });
         load();
-      } catch (e) { toast(e.message, 'error'); }
+      } catch (e) {
+        if (String(e.message).includes('foreign key') || String(e.message).includes('violates')) {
+          toast('刪除失敗：此案件仍被其他資料引用', 'error');
+        } else {
+          toast('刪除失敗：' + e.message, 'error');
+        }
+      }
+    });
+  }
+
+  // ── 批量刪除 ──
+  async function bulkDelete() {
+    if (!user?.isAdmin) { toast('僅管理員可批量刪除', 'error'); return; }
+    if (selected.size === 0) return;
+    const allSelected = rows.filter(r => selected.has(r.id));
+    const blocked = [];
+    const deletable = [];
+    for (const c of allSelected) {
+      const issues = await checkDownstream(c);
+      if (issues.length > 0) blocked.push({ c, issues });
+      else deletable.push(c);
+    }
+    if (deletable.length === 0) {
+      toast(`選取的 ${allSelected.length} 筆全部有下游資料，無法刪除`, 'error');
+      return;
+    }
+    const blockedNote = blocked.length > 0
+      ? `\n\n⚠ 其中 ${blocked.length} 筆有下游資料會跳過：\n${blocked.slice(0, 3).map(b => `${b.c.order_no || b.c.case_no}：${b.issues[0]}`).join('\n')}${blocked.length > 3 ? `\n...另 ${blocked.length - 3} 筆` : ''}`
+      : '';
+    confirm(`批量刪除 ${deletable.length} 筆案件？`, `將永久刪除 ${deletable.length} 筆，無法復原。${blockedNote}`, async () => {
+      let okCount = 0, failCount = 0;
+      const failures = [];
+      for (const c of deletable) {
+        try {
+          await sbFetch(`quotes?case_id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_id: null }) }).catch(() => {});
+          await sbFetch(`cases?id=eq.${c.id}`, { method: 'DELETE' });
+          okCount++;
+        } catch (e) {
+          failCount++;
+          failures.push(c.order_no || c.case_no || c.id);
+        }
+      }
+      if (failCount === 0) {
+        toast(`已刪除 ${okCount} 筆${blocked.length > 0 ? `（跳過 ${blocked.length} 筆有下游資料）` : ''}`, 'success');
+      } else {
+        toast(`成功 ${okCount} 筆，失敗 ${failCount} 筆 (${failures.slice(0, 3).join(', ')})`, failCount === deletable.length ? 'error' : 'warning');
+      }
+      setSelected(new Set());
+      load();
     });
   }
 
@@ -254,7 +326,13 @@ export default function Cases() {
             <option value="cancelled">已取消</option>
           </select>
           <button className="btn btn-primary btn-sm" disabled={!batchStatus} onClick={batchUpdateStatus}>批次更新</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>取消選取</button>
+          {user?.isAdmin && (
+            <>
+              <span style={{ width: 1, height: 22, background: 'rgba(0,0,0,.15)' }} />
+              <button className="btn btn-danger btn-sm" onClick={bulkDelete} title="批量刪除（會檢查下游資料）">🗑 批量刪除</button>
+            </>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())} style={{ marginLeft: 'auto' }}>取消選取</button>
         </div>
       )}
 
@@ -350,7 +428,7 @@ export default function Cases() {
       </div>
 
       <Modal open={modal.open} onClose={tryClose} title={`案件詳細${isDirty() ? ' •' : ''}`} maxWidth={720}
-        footer={<><button className="btn btn-ghost" onClick={tryClose}>關閉</button><button className="btn btn-danger" onClick={deleteCase}>刪除</button></>}>
+        footer={<><button className="btn btn-ghost" onClick={tryClose}>關閉</button>{user?.isAdmin && <button className="btn btn-danger" onClick={deleteCase}>🗑 刪除</button>}</>}>
         {modal.open && <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <strong>{form.case_no}</strong>
