@@ -10,7 +10,21 @@ const TW_DISTRICTS_URL = 'https://raw.githubusercontent.com/donma/TaiwanAddressC
 const FIRE_TYPES = [
   { value: 'none', label: '不防火' },
   { value: 'f60a', label: 'f60A 防火' },
-  { value: 'f60a_smoke', label: 'f60A 遮煙門' }
+  { value: 'f60a_smoke', label: 'f60A 遮煙門' },
+  { value: 'soundproof', label: '隔音' }
+];
+
+const INSTALL_METHODS = [
+  { value: '甲方派送安裝', label: '甲方派送安裝' },
+  { value: '乙方取件安裝', label: '乙方取件安裝' }
+];
+
+const PAY_METHODS = [
+  { value: '', label: '未指定' },
+  { value: 'cash', label: '現金' },
+  { value: 'transfer', label: '匯款' },
+  { value: 'card', label: '信用卡(綠界)' },
+  { value: 'measure_paid', label: '丈量費已付' }
 ];
 
 const ACC_CATS = ['lock', 'hinge', 'sill', 'closer', 'frame'];
@@ -43,18 +57,23 @@ export default function NewFormalQuote() {
     contact: '', phone: '', taxId: '', city: '', dist: '', address: '',
     custType: '', salesPerson: '',
     doorType: 'single', fireType: 'none', direction: '',
-    frameThick: '', panelThick: '', artFrame: '', deliveryType: '',
-    color: '', lockStyle: '', installMethod: '',
+    frameThick: '', panelThick: '', artFrame: '', deliveryType: '框扇同時',
+    color: '', lockStyle: '', installMethod: '甲方派送安裝',
     width: '', height: '', qty: 1, unitPrice: '', discount: '1', installFee: 8000,
     addonItems: '', note: '', deliveryDays: 75, hasElevator: true, floor: 0,
-    quoteId: ''
+    quoteId: '',
+    // ─ 公司報價單範本新增欄位 ─
+    material: '', frontPanelStyle: '', backPanelStyle: '',
+    deliveryFee: '', drawingNo: '', frameCount: '',
+    measureFee: 3000,
+    payMeasure: '', payDeposit: '', payBalance: '',
   });
 
   const [accState, setAccState] = useState({}); // cat -> { useUpgrade: bool }
   const [calcResult, setCalcResult] = useState(null);
 
-  // Checkboxes
-  const [reqs, setReqs] = useState({ demolish: false, recycle: false, occupy: false, wet: false, dry: false });
+  // Checkboxes — 加入「無、站框」
+  const [reqs, setReqs] = useState({ none: false, demolish: false, recycle: false, occupy: false, wet: false, dry: false, frame: false });
 
   // Auto-generate next sequence number for this month
   async function loadNextSeq(region, category, year, month) {
@@ -190,7 +209,8 @@ export default function NewFormalQuote() {
     if (!form.unitPrice) { toast('請填寫門扇單價', 'error'); return; }
     const c = calcResult || {};
     const formalQuoteNo = `${form.region}-${form.category}-${form.year}-${form.month}-${form.seq || '001'}`;
-    const specialReqs = Object.entries(reqs).filter(([, v]) => v).map(([k]) => ({ demolish: '拆舊', recycle: '回收', occupy: '佔框', wet: '濕式施工', dry: '乾式包框' }[k]));
+    const reqLabelMap = { none: '無', demolish: '拆舊', recycle: '回收', occupy: '佔框', wet: '濕式施工', dry: '乾式包框', frame: '站框' };
+    const specialReqs = Object.entries(reqs).filter(([, v]) => v).map(([k]) => reqLabelMap[k]).filter(Boolean);
 
     const formalData = {
       region: form.region, category: form.category, fire_type: form.fireType,
@@ -201,9 +221,23 @@ export default function NewFormalQuote() {
       install_method: form.installMethod,
       width_mm: parseInt(form.width) || null, height_mm: parseInt(form.height) || null,
       has_elevator: form.hasElevator,
+      floor: parseInt(form.floor) || 0,
       imported_quote_no: importedQuote?.quote_no || null,
       imported_quote_id: importedQuote?.id || null,
-      accessories: collectAccessories()
+      accessories: collectAccessories(),
+      // ─ 公司報價單範本新增欄位 ─
+      material: form.material || null,
+      front_panel_style: form.frontPanelStyle || null,
+      back_panel_style: form.backPanelStyle || null,
+      delivery_fee: parseInt(form.deliveryFee) || 0,
+      drawing_no: form.drawingNo || null,
+      frame_count: parseInt(form.frameCount) || null,
+      unit_price: parseInt(form.unitPrice) || null,
+      payment_methods: {
+        measure: form.payMeasure || '',
+        deposit: form.payDeposit || '',
+        balance: form.payBalance || ''
+      }
     };
 
     const fullAddress = [form.city, form.dist, form.address].filter(Boolean).join('') || null;
@@ -233,6 +267,7 @@ export default function NewFormalQuote() {
       actual_height_cm: formalData.height_mm ? Math.round(formalData.height_mm / 10) : null,
       deposit_50: c.deposit || null,
       balance: c.balance || null,
+      measure_fee: parseInt(form.measureFee) || 3000,
       note: form.note || null,
       official_note: `門扇單價:${c.unitPrice} x${c.qty}${c.discount < 1 ? ` 折扣${Math.round(c.discount * 100)}%` : ''} 安裝費:${c.installFee}`,
       official_quote_at: new Date().toISOString(),
@@ -366,11 +401,74 @@ export default function NewFormalQuote() {
           <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>特殊需求</div>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              {[['demolish', '拆舊'], ['recycle', '回收'], ['occupy', '佔框'], ['wet', '濕式施工'], ['dry', '乾式包框']].map(([k, l]) => (
+              {[['none', '無'], ['demolish', '拆舊'], ['recycle', '回收'], ['occupy', '佔框'], ['wet', '濕式施工'], ['dry', '乾式包框'], ['frame', '站框']].map(([k, l]) => (
                 <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
                   <input type="checkbox" checked={reqs[k]} onChange={e => setReqs(r => ({ ...r, [k]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />{l}
                 </label>
               ))}
+            </div>
+          </div>
+
+          {/* 完整門體規格（範本對應） */}
+          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>門體規格詳細（公司報價單範本）</div>
+            <div className="form-grid">
+              <div className="form-group"><label>材質 / 工藝</label><input value={form.material} onChange={e => setForm(f => ({ ...f, material: e.target.value }))} placeholder="例：鋼板烤漆" /></div>
+              <div className="form-group"><label>前板樣式</label><input value={form.frontPanelStyle} onChange={e => setForm(f => ({ ...f, frontPanelStyle: e.target.value }))} placeholder="編號或名稱" /></div>
+              <div className="form-group"><label>背板樣式</label><input value={form.backPanelStyle} onChange={e => setForm(f => ({ ...f, backPanelStyle: e.target.value }))} placeholder="編號或名稱" /></div>
+              <div className="form-group"><label>門開方向</label>
+                <select value={form.direction} onChange={e => setForm(f => ({ ...f, direction: e.target.value }))} style={inputStyle}>
+                  <option value="">未指定</option><option value="左外開">左外開</option><option value="左內開">左內開</option><option value="右外開">右外開</option><option value="右內開">右內開</option>
+                </select>
+              </div>
+              <div className="form-group"><label>運送安裝方式</label>
+                <select value={form.installMethod} onChange={e => setForm(f => ({ ...f, installMethod: e.target.value }))} style={inputStyle}>
+                  {INSTALL_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label>交貨方式</label>
+                <select value={form.deliveryType} onChange={e => setForm(f => ({ ...f, deliveryType: e.target.value }))} style={inputStyle}>
+                  <option value="框扇同時">框扇同時</option><option value="先框後扇">先框後扇</option>
+                </select>
+              </div>
+              <div className="form-group"><label>框厚 (可空白)</label><input value={form.frameThick} onChange={e => setForm(f => ({ ...f, frameThick: e.target.value }))} placeholder="例：50mm" /></div>
+              <div className="form-group"><label>扇厚 (可空白)</label><input value={form.panelThick} onChange={e => setForm(f => ({ ...f, panelThick: e.target.value }))} placeholder="例：45mm" /></div>
+              <div className="form-group"><label>藝術框 (顯示編號)</label><input value={form.artFrame} onChange={e => setForm(f => ({ ...f, artFrame: e.target.value }))} placeholder="編號或無" /></div>
+              <div className="form-group"><label>門扇顏色 / 色卡編號</label><input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} /></div>
+              <div className="form-group"><label>門鎖樣式 / 編號</label><input value={form.lockStyle} onChange={e => setForm(f => ({ ...f, lockStyle: e.target.value }))} /></div>
+              <div className="form-group"><label>圖號</label><input value={form.drawingNo} onChange={e => setForm(f => ({ ...f, drawingNo: e.target.value }))} /></div>
+              <div className="form-group"><label>門樘數量</label><input type="number" value={form.frameCount} onChange={e => setForm(f => ({ ...f, frameCount: e.target.value }))} placeholder="預設同數量" /></div>
+              <div className="form-group"><label>樓層</label><input type="number" value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
+              <div className="form-group"><label>電梯</label>
+                <select value={form.hasElevator ? '1' : '0'} onChange={e => setForm(f => ({ ...f, hasElevator: e.target.value === '1' }))} style={inputStyle}>
+                  <option value="1">有電梯</option><option value="0">無電梯</option>
+                </select>
+              </div>
+              <div className="form-group"><label>搬運費用 (NT$)</label><input type="number" value={form.deliveryFee} onChange={e => setForm(f => ({ ...f, deliveryFee: e.target.value }))} placeholder="0=無" /></div>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>* 桃園以北適用，新竹以南/宜蘭/花蓮/台東另議</div>
+          </div>
+
+          {/* 付款方式 */}
+          <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 1, marginBottom: 8 }}>付款方式（範本下方訂單金額區）</div>
+            <div className="form-grid">
+              <div className="form-group"><label>丈量費用 (NT$)</label><input type="number" value={form.measureFee} onChange={e => setForm(f => ({ ...f, measureFee: e.target.value }))} /></div>
+              <div className="form-group"><label>丈量費 收款方式</label>
+                <select value={form.payMeasure} onChange={e => setForm(f => ({ ...f, payMeasure: e.target.value }))} style={inputStyle}>
+                  {PAY_METHODS.filter(m => m.value !== 'measure_paid').map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label>訂金 50% 收款方式</label>
+                <select value={form.payDeposit} onChange={e => setForm(f => ({ ...f, payDeposit: e.target.value }))} style={inputStyle}>
+                  {PAY_METHODS.filter(m => m.value !== 'measure_paid').map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label>尾款 收款方式</label>
+                <select value={form.payBalance} onChange={e => setForm(f => ({ ...f, payBalance: e.target.value }))} style={inputStyle}>
+                  {PAY_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
             </div>
           </div>
         </div>
