@@ -5,6 +5,7 @@ import { useToast } from '../components/UI/Toast';
 import StatCard from '../components/UI/StatCard';
 import { useNavigate } from 'react-router-dom';
 import { printFormalQuote } from '../api/pdf';
+import { exportFormalQuoteExcel } from '../api/excel';
 
 export default function FormalQuote() {
   const [rows, setRows] = useState([]);
@@ -74,8 +75,9 @@ export default function FormalQuote() {
                   <td className="price">{fmtPrice(c.total_with_tax)}</td>
                   <td><span className="badge" style={{ background: st.bg, color: st.color }}>{CASE_STATUS_LABEL[c.status] || c.status}</span></td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(c.created_at)}</td>
-                  <td>
+                  <td style={{ display: 'flex', gap: 4 }}>
                     <button onClick={() => printFormalQuote(c)} title="列印報價單 PDF" style={{ background: 'transparent', border: '1px solid var(--gold)', borderRadius: 4, padding: '4px 9px', cursor: 'pointer', color: 'var(--gold)', fontSize: 11, fontWeight: 600 }}>PDF</button>
+                    <button onClick={() => exportFormalQuoteExcel(c)} title="匯出報價單 Excel" style={{ background: 'transparent', border: '1px solid #22c55e', borderRadius: 4, padding: '4px 9px', cursor: 'pointer', color: '#22c55e', fontSize: 11, fontWeight: 600 }}>XLS</button>
                   </td>
                 </tr>
               );

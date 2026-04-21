@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sbFetch, proxyCount } from '../api/supabase';
 import { fmtDate, fmtPrice, DOOR_TYPE_LABEL, PAGE_SIZE } from '../api/utils';
+import { exportQuoteExcel } from '../api/excel';
 import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../components/UI/Toast';
 import { useConfirm } from '../components/UI/Confirm';
@@ -221,6 +222,7 @@ export default function Quotes() {
         footer={<>
           <button className="btn btn-ghost" onClick={() => setModal({ open: false, data: null })}>關閉</button>
           <button className="btn btn-ghost" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }} onClick={() => window.open(`${import.meta.env.VITE_N8N_BASE_URL}/webhook/quote-pdf?no=${encodeURIComponent(q.quote_no)}`, '_blank')}>PDF</button>
+          <button className="btn btn-ghost" style={{ borderColor: '#22c55e', color: '#22c55e' }} onClick={() => exportQuoteExcel(q)}>Excel</button>
           <button className="btn btn-danger" onClick={() => deleteQuote(q)}>刪除</button>
         </>}>
         {modal.open && <>
