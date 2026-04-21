@@ -6,6 +6,7 @@ import { useConfirm } from '../components/UI/Confirm';
 import { useAuth } from '../contexts/AuthContext';
 import StatCard from '../components/UI/StatCard';
 import Modal from '../components/UI/Modal';
+import { exportFormalQuoteExcel } from '../api/excel';
 
 const REJECT_REASONS = [
   { value: 'incomplete_data', label: '資料不齊全' },
@@ -517,7 +518,7 @@ export default function InternalOrder() {
 
               // Action buttons
               const actionBtns = [];
-              actionBtns.push(<button key="csv" className="btn btn-ghost btn-sm" onClick={() => downloadCaseCSV(c.id)} style={{ ...btnS, borderColor: 'var(--gold)', color: 'var(--gold)' }} title="CSV">CSV</button>);
+              actionBtns.push(<button key="excel" className="btn btn-ghost btn-sm" onClick={() => exportFormalQuoteExcel(c)} style={{ ...btnS, borderColor: '#22c55e', color: '#22c55e' }} title="下載報價單 Excel">Excel</button>);
               if (isPending) {
                 actionBtns.push(<button key="submit" className="btn btn-primary btn-sm" onClick={() => ioSubmit(c.id)} style={{ ...btnS, background: '#10b981', borderColor: '#10b981' }}>確認下單</button>);
                 actionBtns.push(<button key="reject" className="btn btn-danger btn-sm" onClick={() => openRejectModal(c.id)} style={btnS}>退回業務</button>);
