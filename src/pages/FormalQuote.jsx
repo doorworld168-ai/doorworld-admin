@@ -9,8 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import { printFormalQuote } from '../api/pdf';
 import { exportFormalQuoteExcel } from '../api/excel';
 
-// 「進階」狀態 — 已進入後續流程，不可隨意刪除
-const ADVANCED_STATUSES = ['order_confirmed', 'deposit_paid', 'production', 'shipped', 'arrived', 'installed', 'completed'];
+// 「進階」狀態 — 實際生產/出貨後才擋
+const ADVANCED_STATUSES = ['production', 'shipped', 'arrived', 'installed', 'completed'];
 
 export default function FormalQuote() {
   const [rows, setRows] = useState([]);
@@ -55,10 +55,10 @@ export default function FormalQuote() {
     // 3. 已下單
     if (c.sales_order_date) issues.push('業務已下單給內勤（請到「業務下單」撤回）');
     if (c.internal_order_date) issues.push('內勤已下單給工廠（請到「內勤下單」退回業務）');
-    // 4. 台廠生產記錄
+    // 4. 台廠生產記錄（排除已取消）
     try {
-      const prods = await sbFetch(`production?case_id=eq.${c.id}&select=id&limit=1`);
-      if (prods?.length > 0) issues.push('已有台廠生產記錄（請到「台灣工廠」刪除）');
+      const prods = await sbFetch(`production?case_id=eq.${c.id}&production_status=neq.cancelled&select=id&limit=1`);
+      if (prods?.length > 0) issues.push('已有未取消的台廠生產記錄（請到「台灣工廠」刪除）');
     } catch {}
     // 5. 大陸工廠
     if (c.cn_order_date || c.cn_ilande_no) issues.push('已下大陸工廠單（請到「大陸工廠」清除）');

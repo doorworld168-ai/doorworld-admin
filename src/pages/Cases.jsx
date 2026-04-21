@@ -11,8 +11,8 @@ import DateQuickFilter from '../components/UI/DateQuickFilter';
 
 const CTYPE_OPTIONS = [['','選擇'],['S','股東'],['C','直客'],['D','設計師'],['D1','D1(20堂+)'],['D2','D2(60堂+)'],['A','代理商'],['B','建商'],['CC','商會'],['DD','經銷商'],['E','員工'],['G','公機關'],['V','VIP'],['Z','親友'],['X','公司']];
 const SS_KEY = 'cases_filters_v1';
-// 「進階」狀態 — 已進入後續流程，不可隨意刪除
-const ADVANCED_STATUSES = ['order_confirmed', 'deposit_paid', 'production', 'shipped', 'arrived', 'installed', 'completed'];
+// 「進階」狀態 — 實際生產/出貨後才擋（訂金/下單只是財務里程碑，本身不是「資料」）
+const ADVANCED_STATUSES = ['production', 'shipped', 'arrived', 'installed', 'completed'];
 
 export default function Cases() {
   const [rows, setRows] = useState([]);
@@ -180,10 +180,10 @@ export default function Cases() {
     // 4. 業務 / 內勤下單
     if (c.sales_order_date) issues.push('業務已下單給內勤（請到「業務下單」撤回）');
     if (c.internal_order_date) issues.push('內勤已下單給工廠（請到「內勤下單」退回業務）');
-    // 5. 台灣工廠生產記錄 (production 表)
+    // 5. 台灣工廠生產記錄 (production 表) — 排除已取消的
     try {
-      const prods = await sbFetch(`production?case_id=eq.${c.id}&select=id&limit=1`);
-      if (prods?.length > 0) issues.push('已有台廠生產記錄（請到「台灣工廠」刪除）');
+      const prods = await sbFetch(`production?case_id=eq.${c.id}&production_status=neq.cancelled&select=id&limit=1`);
+      if (prods?.length > 0) issues.push('已有未取消的台廠生產記錄（請到「台灣工廠」刪除）');
     } catch {}
     // 6. 大陸工廠資料
     if (c.cn_order_date || c.cn_ilande_no) issues.push('已下大陸工廠單（請到「大陸工廠」清除）');
@@ -497,8 +497,84 @@ export default function Cases() {
                   <li key={i} style={{ marginBottom: 2 }}>{issue}</li>
                 ))}
               </ol>
-              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                請依上方括號內提示前往對應頁面清除，全部清完後刪除按鈕會自動啟用。
+
+              {/* 一鍵清理工具 */}
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(239,68,68,.3)' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--danger)', marginBottom: 6, letterSpacing: 1 }}>🛠 快速清理（管理員）</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {/* 變更狀態為 cancelled */}
+                  {ADVANCED_STATUSES.includes(form.status) && (
+                    <button
+                      onClick={async () => {
+                        confirm('變更狀態為「已取消」?', '會把案件狀態改為 cancelled，本身不會刪除任何資料。', async () => {
+                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled', updated_at: new Date().toISOString() }) });
+                          toast('狀態已改為已取消', 'success');
+                          // 重新檢查
+                          const updated = { ...modal.data, status: 'cancelled' };
+                          setForm(f => ({ ...f, status: 'cancelled' }));
+                          const issues = await checkDownstream(updated);
+                          setDeleteIssues(issues);
+                          load();
+                        });
+                      }}
+                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+                    >改狀態為「已取消」</button>
+                  )}
+                  {/* 清除收款標記 */}
+                  {(form.measure_fee_paid_at || form.deposit_50_paid_at || form.balance_paid_at) && (
+                    <button
+                      onClick={async () => {
+                        confirm('清除所有收款標記?', '會把丈量費/訂金/尾款的「已收日期」全部清空。', async () => {
+                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null, updated_at: new Date().toISOString() }) });
+                          toast('收款標記已清除', 'success');
+                          const updated = { ...modal.data, measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null };
+                          setForm(f => ({ ...f, measure_fee_paid_at: null, deposit_50_paid_at: null, balance_paid_at: null }));
+                          const issues = await checkDownstream(updated);
+                          setDeleteIssues(issues);
+                          load();
+                        });
+                      }}
+                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+                    >清除收款標記</button>
+                  )}
+                  {/* 清除附件 */}
+                  {Array.isArray(form.case_files) && form.case_files.length > 0 && (
+                    <button
+                      onClick={async () => {
+                        confirm('清除所有附件?', `會清除 ${form.case_files.length} 個附件（從 case_files 欄位移除）。\n\n注意：Supabase Storage 檔案不會自動刪除。`, async () => {
+                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ case_files: [], updated_at: new Date().toISOString() }) });
+                          toast('附件已清除', 'success');
+                          const updated = { ...modal.data, case_files: [] };
+                          setForm(f => ({ ...f, case_files: [] }));
+                          const issues = await checkDownstream(updated);
+                          setDeleteIssues(issues);
+                          load();
+                        });
+                      }}
+                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+                    >清除 {form.case_files.length} 個附件</button>
+                  )}
+                  {/* 清除業務/內勤下單日期 */}
+                  {(form.sales_order_date || form.internal_order_date) && (
+                    <button
+                      onClick={async () => {
+                        confirm('清除下單日期?', '會把業務下單日、內勤下單日、工廠類型一併清空。', async () => {
+                          await sbFetch(`cases?id=eq.${modal.data.id}`, { method: 'PATCH', body: JSON.stringify({ sales_order_date: null, internal_order_date: null, factory_type: null, estimated_arrival: null, updated_at: new Date().toISOString() }) });
+                          toast('下單日期已清除', 'success');
+                          const updated = { ...modal.data, sales_order_date: null, internal_order_date: null, factory_type: null };
+                          setForm(f => ({ ...f, sales_order_date: null, internal_order_date: null, factory_type: null }));
+                          const issues = await checkDownstream(updated);
+                          setDeleteIssues(issues);
+                          load();
+                        });
+                      }}
+                      style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+                    >清除下單日期</button>
+                  )}
+                </div>
+                <div style={{ marginTop: 6, fontSize: 10, color: 'var(--text-muted)' }}>
+                  其他項目（payments 表、台廠生產、大陸工廠）請到對應頁面用對應按鈕清除。
+                </div>
               </div>
             </div>
           )}
