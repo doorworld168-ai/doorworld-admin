@@ -362,6 +362,7 @@ export default function SalesOrder() {
                         <>
                           <a href={signedFile.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--success)', textDecoration: 'none' }}>客人回簽 ✓</a>
                           {canEdit && <button className="btn btn-danger btn-sm" style={{ fontSize: 9, padding: '1px 5px' }} onClick={() => editFile(c.id, 'signed_quote')}>內勤修改</button>}
+                          {user?.isAdmin && <button onClick={() => removeFile(c.id, 'signed_quote')} title="刪除回簽（管理員）" style={{ fontSize: 9, padding: '1px 5px', background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 3, cursor: 'pointer' }}>🗑</button>}
                         </>
                       ) : (
                         <>
@@ -377,6 +378,7 @@ export default function SalesOrder() {
                         <>
                           <a href={pdfFile.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--success)', textDecoration: 'none', marginLeft: 8 }}>報價單PDF ✓</a>
                           {canEdit && <button className="btn btn-danger btn-sm" style={{ fontSize: 9, padding: '1px 5px' }} onClick={() => editFile(c.id, 'quote_pdf')}>內勤修改</button>}
+                          {user?.isAdmin && <button onClick={() => removeFile(c.id, 'quote_pdf')} title="刪除PDF（管理員）" style={{ fontSize: 9, padding: '1px 5px', background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 3, cursor: 'pointer' }}>🗑</button>}
                         </>
                       ) : (
                         <>
@@ -388,6 +390,31 @@ export default function SalesOrder() {
                           )}
                         </>
                       )}
+                      {/* 其他附件 + 一鍵清除全部 */}
+                      {(() => {
+                        const others = files.filter(f => f.type === 'attachment');
+                        if (others.length === 0 && !signedFile && !pdfFile) return null;
+                        return (
+                          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                            {others.length > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>其他附件 {others.length} 個</span>}
+                            {user?.isAdmin && files.length > 0 && (
+                              <button
+                                onClick={() => {
+                                  confirmDialog('清除全部附件？', `會把這個案件的 ${files.length} 個附件全部移除（從 case_files 欄位）。\n\n注意：Supabase Storage 檔案不會自動刪除。`, async () => {
+                                    try {
+                                      await sbFetch(`cases?id=eq.${c.id}`, { method: 'PATCH', body: JSON.stringify({ case_files: [] }) });
+                                      toast('已清除全部附件', 'success');
+                                      load();
+                                    } catch (e) { toast('清除失敗: ' + e.message, 'error'); }
+                                  });
+                                }}
+                                title="一鍵清除此案件全部附件（管理員）"
+                                style={{ padding: '3px 8px', fontSize: 10, background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+                              >🗑 全部清除</button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
