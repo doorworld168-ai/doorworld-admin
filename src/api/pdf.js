@@ -1,115 +1,77 @@
-// Formal Quote (報價單) PDF generator — opens print-ready HTML in new window
-// Ported from admin.html v1, adapted for React and new company info
+// Formal Quote (報價單) PDF generator — 對齊 Excel 內容 schema
+// 從 formalQuoteData.buildFormalQuoteVM 取資料
 import { sbFetch } from './supabase';
+import {
+  buildFormalQuoteVM, fmtP, fmtDateLong, QUOTE_TERMS,
+  CUSTOMER_TYPE_LABEL, PAY_METHOD_LABEL
+} from './formalQuoteData';
 
-const COMPANY = {
-  nameZh: '門的世界 DOORWORLD',
-  fullNameZh: '展億室內開發有限公司',
-  taxId: '60667469',
-  addr: '新北市五股區成泰路一段130-3號',
-  phone: '02-2292-0366',
-  email: 'doorworld168@gmail.com',
-  web: 'doorworld.com.tw'
-};
-
-const DOOR_TYPE_LABEL = { single: '單開門', mother: '子母門', double: '雙開門', fire: '防火單門', room: '房間門', bathroom: '衛浴門', sliding: '橫拉門' };
-
-function fmtP(v) { return v ? 'NT$ ' + Number(v).toLocaleString() : '—'; }
-function fmtDate(str) {
-  const d = str ? new Date(str) : new Date();
-  return d.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[<>&"']/g, m =>
+    ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[m]));
 }
-function esc(s) { return String(s == null ? '' : s).replace(/[<>&"']/g, m => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[m])); }
+
+const checkMark = (val, target) => val === target ? '■' : '☐';
 
 /**
  * Open a formal quote PDF (報價單) in a new window with print dialog
- * @param {object} c - case record from Supabase
  */
 export async function printFormalQuote(c) {
   if (!c) { alert('找不到案件資料'); return; }
-  const fd = c.formal_quote_data || {};
+  const vm = buildFormalQuoteVM(c);
 
   // Fetch product image
   let thumbnailUrl = '';
-  if (c.product_code) {
+  if (vm.door.productCode) {
     try {
-      const imgs = await sbFetch(`products?full_code=eq.${encodeURIComponent(c.product_code)}&select=thumbnail_url,image_url`);
+      const imgs = await sbFetch(`products?full_code=eq.${encodeURIComponent(vm.door.productCode)}&select=thumbnail_url,image_url`);
       thumbnailUrl = (imgs && imgs[0] && (imgs[0].thumbnail_url || imgs[0].image_url)) || '';
     } catch {}
   }
 
-  // Fetch accessory images from DB
+  // Fetch accessory images map (by name)
   const accImgMap = {};
   try {
     const accRows = await sbFetch('accessories?select=name,image_url&is_active=eq.true&image_url=not.is.null');
     (accRows || []).forEach(a => { if (a.image_url) accImgMap[a.name] = a.image_url; });
   } catch {}
 
-  const fireLabel = fd.fire_type === 'f60a' ? 'f60A防火' : fd.fire_type === 'f60a_smoke' ? 'f60A遮煙門' : c.is_fireproof ? 'f60A防火' : '不防火';
-  const doorLabel = DOOR_TYPE_LABEL[c.door_type] || c.door_type || '單開門';
-  const dateStr = fmtDate(c.official_quote_at || c.created_at);
+  // Fetch color card image
+  let colorImgUrl = '', colorName = '';
+  if (vm.door.color) {
+    try {
+      const cc = await sbFetch(`color_cards?code=eq.${encodeURIComponent(vm.door.color)}&select=image_url,name_zh,name_en`);
+      if (cc && cc[0]) { colorImgUrl = cc[0].image_url || ''; colorName = cc[0].name_zh || cc[0].name_en || ''; }
+    } catch {}
+  }
 
-  // Special requirements
-  const reqs = fd.special_requirements || [];
-  const reqChecks = ['拆舊', '回收', '佔框', '濕式施工', '乾式包框'];
-  const reqStr = reqChecks.map(r => (reqs.indexOf(r) >= 0 ? '■' : '□') + r).join(' ');
+  // Fetch panel style images
+  let frontPanelImg = '', backPanelImg = '';
+  if (vm.door.frontPanel || vm.door.backPanel) {
+    try {
+      const codes = [vm.door.frontPanel, vm.door.backPanel].filter(Boolean);
+      const ps = await sbFetch(`panel_styles?code=in.(${codes.map(c => `"${c}"`).join(',')})&select=code,image_url`);
+      (ps || []).forEach(p => {
+        if (p.code === vm.door.frontPanel) frontPanelImg = p.image_url || '';
+        if (p.code === vm.door.backPanel) backPanelImg = p.image_url || '';
+      });
+    } catch {}
+  }
 
-  // Addon items parsing
+  const dateStr = fmtDateLong(vm.dates.quote);
+
+  // Addon rows HTML
   let addonRows = '';
-  let addonTotal = 0;
-  if (c.addon_items) {
-    c.addon_items.split('\n').forEach(raw => {
-      const line = raw.trim();
-      if (!line) return;
-      // Find trailing number
-      let i = line.length - 1;
-      while (i >= 0 && (line[i] === ' ' || (line.charCodeAt(i) >= 48 && line.charCodeAt(i) <= 57) || line[i] === ',')) i--;
-      const numStart = i + 1;
-      if (numStart < line.length) {
-        const numStr = line.substring(numStart).trim().replace(/,/g, '');
-        const amt = parseInt(numStr, 10);
-        if (!isNaN(amt)) {
-          const label = line.substring(0, numStart).trim();
-          addonTotal += amt;
-          addonRows += `<tr><td class="tdl">${esc(label)}</td><td class="tdv ra">${fmtP(amt)}</td></tr>`;
-          return;
-        }
-      }
-      addonRows += `<tr><td class="tdl" colspan="2">${esc(line)}</td></tr>`;
-    });
-  }
-
-  // Price calculations
-  let unitPrice = 0;
-  const qty = c.quantity || 1;
-  if (c.official_note) {
-    const idx = c.official_note.indexOf('門扇單價:');
-    if (idx !== -1) {
-      let j = idx + 5;
-      let numStr = '';
-      while (j < c.official_note.length && c.official_note.charCodeAt(j) >= 48 && c.official_note.charCodeAt(j) <= 57) {
-        numStr += c.official_note[j];
-        j++;
-      }
-      if (numStr) unitPrice = parseInt(numStr, 10);
+  vm.pricing.addonItems.forEach(item => {
+    if (item.amount != null) {
+      addonRows += `<tr><td class="tdl">${esc(item.label)}</td><td class="tdv ra">${fmtP(item.amount)}</td></tr>`;
+    } else {
+      addonRows += `<tr><td class="tdl" colspan="2">${esc(item.label)}</td></tr>`;
     }
-  }
-  if (!unitPrice && c.official_price && qty > 0) unitPrice = Math.round(c.official_price / qty);
+  });
 
-  const discountRate = c.discount_rate || 1;
-  const doorSubtotal = unitPrice * qty;
-  const discounted = c.official_price || Math.round(doorSubtotal * discountRate);
-  const installFee = c.install_fee || 0;
-  const totalPrice = c.total_with_tax || (discounted + addonTotal + installFee);
-  const deposit = c.deposit_50 || Math.round(totalPrice * 0.5);
-  const balance = c.balance || (totalPrice - deposit);
-
-  // Width/height in mm
-  const wMM = fd.width_mm || (c.actual_width_cm ? c.actual_width_cm * 10 : '');
-  const hMM = fd.height_mm || (c.actual_height_cm ? c.actual_height_cm * 10 : '');
-
-  // Accessories block with images
-  const acc = fd.accessories || [];
+  // Accessory block with images
+  const acc = vm.accessories;
   const accessoryBlock = acc.length === 0 ? '' : `
     <div style="margin-top:6px">
       <div style="font-size:8px;font-weight:700;letter-spacing:3px;color:#c9a227;text-transform:uppercase;padding:3px 10px;background:#1a1a1a;display:inline-block;margin-bottom:4px">五金配件</div>
@@ -118,9 +80,9 @@ export async function printFormalQuote(c) {
           const chosen = a.useUpgrade ? a.upgrade : a.standard;
           const bg = a.useUpgrade ? '#f9f6ec' : '#fff';
           const imgUrl = accImgMap[chosen] || accImgMap[a.standard] || '';
-          return `<td style="border:1px solid #e2d5a0;padding:6px 8px;text-align:center;background:${bg};vertical-align:top;width:${100/acc.length}%">
+          return `<td style="border:1px solid #e2d5a0;padding:6px 8px;text-align:center;background:${bg};vertical-align:top;width:${100 / acc.length}%">
             <div style="font-size:8px;font-weight:700;color:#c9a227;letter-spacing:1px;margin-bottom:3px">${esc(a.label)}</div>
-            ${imgUrl ? `<img src="${esc(imgUrl)}" alt="" style="width:60px;height:60px;object-fit:contain;border:1px solid #e2d5a0;border-radius:3px;margin-bottom:3px">` : '<div style="width:60px;height:60px;display:inline-block"></div>'}
+            ${imgUrl ? `<img src="${esc(imgUrl)}" alt="" style="width:50px;height:50px;object-fit:contain;border:1px solid #e2d5a0;border-radius:3px;margin-bottom:3px">` : '<div style="width:50px;height:50px;display:inline-block"></div>'}
             <div style="font-size:9px;font-weight:600;line-height:1.3">${esc(chosen || '—')}</div>
             ${a.useUpgrade ? '<div style="font-size:7px;color:#c9a227;margin-top:1px;font-weight:700">選配</div>' : '<div style="font-size:7px;color:#888;margin-top:1px">標配</div>'}
           </td>`;
@@ -128,8 +90,25 @@ export async function printFormalQuote(c) {
       </tr></table>
     </div>`;
 
+  // 16 條條款 HTML
+  const termsHtml = QUOTE_TERMS.map((line, idx) => {
+    if (idx === 0) return `<b>${esc(line)}</b>`;
+    return esc(line);
+  }).join('<br>');
+
+  // 付款方式 row
+  function payCheckboxRow(label, amount, methodVal, allowMeasurePaid) {
+    const opts = ['cash', 'transfer', 'card'];
+    if (allowMeasurePaid) opts.push('measure_paid');
+    return `<tr>
+      <td class="tdl">${esc(label)}</td>
+      <td class="tdv ra" style="font-weight:700">${fmtP(amount)}</td>
+      <td class="tdv" colspan="2" style="font-size:9px">${opts.map(o => `${checkMark(methodVal, o)}${PAY_METHOD_LABEL[o]}`).join('   ')}</td>
+    </tr>`;
+  }
+
   const html = `<!DOCTYPE html><html><head>
-<meta charset="utf-8"><title>${esc(c.formal_quote_no || '報價單')}</title>
+<meta charset="utf-8"><title>${esc(vm.no.full || '報價單')}</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -141,8 +120,10 @@ body{font-family:"Noto Sans TC",sans-serif;background:#fff;color:#1a1a1a;font-si
 .hdr-r{text-align:right;font-size:10px;color:#555}
 .doc-title{font-size:28px;font-weight:900;color:#1a1a1a;letter-spacing:2px}
 .doc-sub{font-size:10px;font-weight:700;color:#c9a227;letter-spacing:4px;text-transform:uppercase;margin-top:2px}
+.doc-ver{font-size:8px;color:#888;margin-top:1px}
 .company-info{font-size:9px;color:#666;margin-top:4px;line-height:1.6}
 .qno{font-size:15px;font-weight:900;color:#1a1a1a;letter-spacing:1px;margin-bottom:4px}
+.qno-seg{font-size:8px;color:#999;font-weight:500;letter-spacing:0.5px}
 .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #d4af37;margin-bottom:8px}
 .info-cell{padding:5px 10px;border-bottom:1px solid #e8ddb5;font-size:10px}
 .info-cell:nth-child(odd){border-right:1px solid #e8ddb5}
@@ -156,16 +137,14 @@ table{width:100%;border-collapse:collapse;margin-bottom:2px}
 .ra{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .prod-tbl th{padding:4px 6px;background:#1a1a1a;color:#c9a227;font-size:8px;font-weight:700;letter-spacing:1px;border:1px solid #333;text-align:center}
 .prod-tbl td{padding:4px 6px;border:1px solid #e2d5a0;text-align:center;font-size:10px}
+.style-row{display:flex;gap:6px;margin-top:4px}
+.style-cell{flex:1;border:1px solid #e2d5a0;background:#fdfcf7;padding:5px;text-align:center;font-size:9px}
+.style-cell img{width:54px;height:54px;object-fit:contain;display:block;margin:0 auto 3px}
 .total-box{background:#1a1a1a;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;margin-top:4px}
 .total-lbl{font-size:8px;font-weight:700;letter-spacing:2px;color:#c9a227;text-transform:uppercase}
 .total-amt{font-size:24px;font-weight:900;color:#c9a227;font-variant-numeric:tabular-nums}
-.pay-grid{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid #d4af37;margin-top:4px}
-.pay-cell{padding:6px 10px;text-align:center;border-right:1px solid #e8ddb5}
-.pay-cell:last-child{border-right:none}
-.pay-lbl{font-size:8px;color:#999;font-weight:700;letter-spacing:1px}
-.pay-val{font-size:14px;font-weight:900;color:#1a1a1a;margin-top:2px;font-variant-numeric:tabular-nums}
-.terms{font-size:7.5px;color:#666;line-height:1.5;column-count:2;column-gap:12px;margin-top:6px;padding:6px 8px;border:1px solid #e2d5a0;background:#fdfcf7}
-.terms b{color:#333}
+.terms{font-size:7.5px;color:#444;line-height:1.55;column-count:2;column-gap:12px;margin-top:6px;padding:6px 8px;border:1px solid #e2d5a0;background:#fdfcf7}
+.terms b{color:#c9a227;display:block;margin-bottom:2px;font-size:8px;letter-spacing:1px}
 .foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:auto;padding-top:8px;border-top:1px solid #d4af37}
 .seal{width:72px;height:72px;border-radius:50%;border:2px solid #c9a227;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#c9a227;text-align:center;line-height:1.3}
 .sign-area{border:1px solid #d4af37;padding:8px 12px;min-width:200px;text-align:center}
@@ -181,107 +160,131 @@ table{width:100%;border-collapse:collapse;margin-bottom:2px}
     <div class="hdr-l">
       <div class="doc-title">報價單</div>
       <div class="doc-sub">QUOTATION</div>
+      <div class="doc-ver">版本/更新日期：001/20251212</div>
       <div class="company-info">
-        甲方：${COMPANY.nameZh}（${COMPANY.fullNameZh}）　統編 ${COMPANY.taxId}<br>
-        ${COMPANY.addr}　TEL: ${COMPANY.phone}　Email: ${COMPANY.email}
+        甲方：${vm.company.nameZh}（${vm.company.fullNameZh}）　統編 ${vm.company.taxId}<br>
+        ${vm.company.addr}　TEL: ${vm.company.phone}　Email: ${vm.company.email}
       </div>
     </div>
     <div class="hdr-r">
-      <div class="qno">${esc(c.formal_quote_no || c.order_no || c.case_no || '—')}</div>
-      <div>日期：${dateStr}</div>
-      ${c.sales_person ? `<div>業務：${esc(c.sales_person)}</div>` : ''}
-      ${c.created_by ? `<div>建單：${esc(c.created_by)}</div>` : ''}
+      <div class="qno">${esc(vm.no.full || '—')}</div>
+      ${vm.no.region ? `<div class="qno-seg">${esc(vm.no.region)} / ${esc(vm.no.category)} / ${esc(vm.no.year)} / ${esc(vm.no.month)} / ${esc(vm.no.serial)}</div>` : ''}
+      <div style="margin-top:3px">建單日期：${dateStr}</div>
+      ${vm.sales.person ? `<div>承辦業務：${esc(vm.sales.person)}</div>` : ''}
+      ${vm.sales.createdBy ? `<div>建單者：${esc(vm.sales.createdBy)}</div>` : ''}
     </div>
   </div>
 
   <div class="info-grid">
-    <div class="info-cell"><div class="info-lbl">乙方 / 聯絡人</div><div class="info-val">${esc(c.customer_name || c.contact_person || '—')}</div></div>
-    <div class="info-cell"><div class="info-lbl">統編</div><div class="info-val">${esc(c.tax_id || '—')}</div></div>
-    <div class="info-cell"><div class="info-lbl">電話</div><div class="info-val">${esc(c.customer_phone || '—')}</div></div>
-    <div class="info-cell"><div class="info-lbl">樓層 / 電梯</div><div class="info-val">${fd.has_elevator === false ? '無電梯' : '有電梯'}</div></div>
-    <div class="info-cell" style="grid-column:span 2"><div class="info-lbl">案場地址</div><div class="info-val">${esc(c.case_address || c.customer_addr || '—')}</div></div>
+    <div class="info-cell"><div class="info-lbl">乙方 / 聯絡人</div><div class="info-val">${esc(vm.customer.name || '—')}</div></div>
+    <div class="info-cell"><div class="info-lbl">統編</div><div class="info-val">${esc(vm.customer.taxId || '—')}</div></div>
+    <div class="info-cell"><div class="info-lbl">電話</div><div class="info-val">${esc(vm.customer.phone || '—')}</div></div>
+    <div class="info-cell"><div class="info-lbl">樓層 / 電梯</div><div class="info-val">${vm.customer.floor || '—'} F　${vm.customer.hasElevator ? '■有電梯  ☐無電梯' : '☐有電梯  ■無電梯'}</div></div>
+    <div class="info-cell" style="grid-column:span 2"><div class="info-lbl">案場地址</div><div class="info-val">${esc(vm.customer.address || '—')}</div></div>
+    ${vm.customer.type ? `<div class="info-cell" style="grid-column:span 2"><div class="info-lbl">客戶型態</div><div class="info-val">${esc(CUSTOMER_TYPE_LABEL[vm.customer.type] || vm.customer.type)}</div></div>` : ''}
   </div>
 
   <div class="sec">
     <div class="stitle">報價明細</div>
     <div style="display:flex;gap:12px;align-items:flex-start">
       <table style="flex:1">
-        <tr><td class="tdl">款式名稱</td><td class="tdv" style="font-weight:700">${esc(c.product_code || '—')}</td>
-            <td class="tdl">門的需求</td><td class="tdv">${esc(doorLabel)}</td></tr>
-        <tr><td class="tdl">防火需求</td><td class="tdv">${esc(fireLabel)}</td>
-            <td class="tdl">交貨時間</td><td class="tdv">${c.delivery_days || 90} 日曆天</td></tr>
-        <tr><td class="tdl">特殊需求</td><td class="tdv" colspan="3" style="font-size:9px">${reqs.length ? reqStr : '□無 ' + reqStr}</td></tr>
-        <tr><td class="tdl">派送安裝</td><td class="tdv" colspan="3">${esc(fd.install_method || '甲方派送安裝')}</td></tr>
+        <tr><td class="tdl">款式名稱</td><td class="tdv" style="font-weight:700">${esc(vm.door.productCode || '—')}</td>
+            <td class="tdl">材質/工藝</td><td class="tdv">${esc(vm.door.material || '—')}</td></tr>
+        <tr><td class="tdl">門的需求</td><td class="tdv">${esc(vm.door.typeLabel)}</td>
+            <td class="tdl">其他需求</td><td class="tdv">${esc(vm.door.fireLabel)}</td></tr>
+        <tr><td class="tdl">運送安裝方式</td><td class="tdv">${esc(vm.door.installMethod)}</td>
+            <td class="tdl">交貨時間</td><td class="tdv">${vm.door.deliveryDays} 日曆天</td></tr>
+        <tr><td class="tdl">特殊需求</td><td class="tdv" colspan="3" style="font-size:9px">${vm.requirements.displayString}</td></tr>
+        <tr><td class="tdl">搬運費用</td><td class="tdv">${vm.pricing.deliveryFee ? fmtP(vm.pricing.deliveryFee) : '無'}</td>
+            <td class="tdv" colspan="2" style="font-size:8px;color:#888">*桃園以北適用，新竹以南/宜蘭/花蓮/台東另議</td></tr>
       </table>
-      ${thumbnailUrl ? `<div style="flex-shrink:0;border:1px solid #e2d5a0;background:#fdfcf7;border-radius:4px;padding:6px;text-align:center"><img src="${esc(thumbnailUrl)}" alt="" style="width:150px;height:150px;object-fit:contain"><div style="font-size:7px;color:#999;margin-top:3px">效果圖僅供參考</div></div>` : ''}
+      ${thumbnailUrl ? `<div style="flex-shrink:0;border:1px solid #e2d5a0;background:#fdfcf7;border-radius:4px;padding:6px;text-align:center"><img src="${esc(thumbnailUrl)}" alt="" style="width:140px;height:140px;object-fit:contain"><div style="font-size:7px;color:#999;margin-top:3px">效果圖僅供參考</div></div>` : ''}
     </div>
   </div>
 
   <div class="sec">
     <div class="stitle">門框尺寸 / 產品規格</div>
     <table class="prod-tbl">
-      <tr><th>門洞寬(W)</th><th>門洞高(H)</th><th>框厚</th><th>扇厚</th><th>門開方向</th><th>數量</th><th>藝術框</th><th>交貨方式</th><th>門扇顏色</th><th>門鎖樣式</th><th>門扇單價</th></tr>
+      <tr><th>門洞寬</th><th>門洞高</th><th>框厚</th><th>扇厚</th><th>門開方向</th><th>數量</th><th>門樘</th><th>圖號</th><th>交貨方式</th><th>門扇單價</th></tr>
       <tr>
-        <td>${wMM ? Math.round(wMM / 10) + ' cm' : '—'}</td>
-        <td>${hMM ? Math.round(hMM / 10) + ' cm' : '—'}</td>
-        <td>${esc(fd.frame_thickness || '—')}</td>
-        <td>${esc(fd.panel_thickness || '—')}</td>
-        <td>${esc(fd.door_direction || '—')}</td>
-        <td>${qty}</td>
-        <td>${esc(fd.art_frame || '無')}</td>
-        <td>${esc(fd.delivery_type || '框扇同時')}</td>
-        <td>${esc(fd.door_color || '—')}</td>
-        <td>${esc(fd.lock_style || '—')}</td>
-        <td style="font-weight:700">${fmtP(unitPrice)}</td>
+        <td>${vm.door.widthMM ? vm.door.widthMM + ' mm' : '—'}</td>
+        <td>${vm.door.heightMM ? vm.door.heightMM + ' mm' : '—'}</td>
+        <td>${esc(vm.door.frameThick || '—')}</td>
+        <td>${esc(vm.door.panelThick || '—')}</td>
+        <td>${esc(vm.door.direction || '—')}</td>
+        <td>${vm.door.qty}</td>
+        <td>${vm.door.frameCount}</td>
+        <td>${esc(vm.door.drawingNo || '—')}</td>
+        <td>${esc(vm.door.deliveryType)}</td>
+        <td style="font-weight:700;color:#c9a227">${fmtP(vm.pricing.unitPrice)}</td>
       </tr>
     </table>
+
+    <!-- 樣式三件套 -->
+    ${(frontPanelImg || backPanelImg || colorImgUrl || vm.door.artFrame || vm.door.lockStyle) ? `
+    <div class="style-row">
+      <div class="style-cell">
+        <div style="font-size:8px;font-weight:700;color:#c9a227;letter-spacing:1px;margin-bottom:2px">前板樣式</div>
+        ${frontPanelImg ? `<img src="${esc(frontPanelImg)}" alt="">` : '<div style="width:54px;height:54px;display:inline-block"></div>'}
+        <div>${esc(vm.door.frontPanel || '—')}</div>
+      </div>
+      <div class="style-cell">
+        <div style="font-size:8px;font-weight:700;color:#c9a227;letter-spacing:1px;margin-bottom:2px">背板樣式</div>
+        ${backPanelImg ? `<img src="${esc(backPanelImg)}" alt="">` : '<div style="width:54px;height:54px;display:inline-block"></div>'}
+        <div>${esc(vm.door.backPanel || '—')}</div>
+      </div>
+      <div class="style-cell">
+        <div style="font-size:8px;font-weight:700;color:#c9a227;letter-spacing:1px;margin-bottom:2px">門扇顏色 / 色卡</div>
+        ${colorImgUrl ? `<img src="${esc(colorImgUrl)}" alt="">` : '<div style="width:54px;height:54px;display:inline-block"></div>'}
+        <div>${esc(vm.door.color || '—')}${colorName ? ` ${esc(colorName)}` : ''}</div>
+      </div>
+      <div class="style-cell">
+        <div style="font-size:8px;font-weight:700;color:#c9a227;letter-spacing:1px;margin-bottom:2px">藝術框</div>
+        <div style="width:54px;height:54px;display:inline-block"></div>
+        <div>${esc(vm.door.artFrame || '無')}</div>
+      </div>
+      <div class="style-cell">
+        <div style="font-size:8px;font-weight:700;color:#c9a227;letter-spacing:1px;margin-bottom:2px">門鎖樣式</div>
+        <div style="width:54px;height:54px;display:inline-block"></div>
+        <div>${esc(vm.door.lockStyle || '—')}</div>
+      </div>
+    </div>` : ''}
+
     ${accessoryBlock}
-    ${c.note ? `<div style="margin-top:4px;font-size:9px;color:#555;padding:4px 8px;background:#f9f6ec;border:1px solid #e2d5a0">備註：${esc(c.note)}</div>` : ''}
+    ${vm.notes.general ? `<div style="margin-top:4px;font-size:9px;color:#555;padding:4px 8px;background:#f9f6ec;border:1px solid #e2d5a0">備註：${esc(vm.notes.general)}</div>` : ''}
   </div>
 
   <div class="sec">
-    <div class="stitle">訂單金額</div>
+    <div class="stitle">追加報價 / 訂單金額</div>
     <table>
-      <tr><td class="tdl">門扇費用 (${qty}樘)</td><td class="tdv ra">${fmtP(doorSubtotal)}</td></tr>
-      ${discountRate < 1 ? `<tr><td class="tdl">折扣 (${Math.round(discountRate * 100)}%)</td><td class="tdv ra">${fmtP(discounted)}</td></tr>` : ''}
-      ${installFee ? `<tr><td class="tdl">安裝費</td><td class="tdv ra">${fmtP(installFee)}</td></tr>` : ''}
-      ${addonRows ? `<tr><td class="tdl" colspan="2" style="background:#1a1a1a;color:#c9a227;font-size:8px;font-weight:700;letter-spacing:2px;text-align:left">附加施工費明細</td></tr>${addonRows}` : ''}
+      <tr><td class="tdl">門扇費用 (${vm.door.qty}樘)</td><td class="tdv ra">${fmtP(vm.pricing.doorSubtotal)}</td></tr>
+      ${vm.pricing.discountRate < 1 ? `<tr><td class="tdl">折扣 (${Math.round(vm.pricing.discountRate * 100)}%)</td><td class="tdv ra">${fmtP(vm.pricing.discounted)}</td></tr>` : ''}
+      ${vm.pricing.installFee ? `<tr><td class="tdl">安裝費</td><td class="tdv ra">${fmtP(vm.pricing.installFee)}</td></tr>` : ''}
+      ${vm.pricing.deliveryFee ? `<tr><td class="tdl">搬運費</td><td class="tdv ra">${fmtP(vm.pricing.deliveryFee)}</td></tr>` : ''}
+      ${addonRows ? `<tr><td class="tdl" colspan="2" style="background:#1a1a1a;color:#c9a227;font-size:8px;font-weight:700;letter-spacing:2px;text-align:left">追加施工費明細</td></tr>${addonRows}<tr><td class="tdl" style="text-align:right">小計金額</td><td class="tdv ra" style="font-weight:700;color:#c9a227">${fmtP(vm.pricing.addonTotal)}</td></tr>` : ''}
     </table>
     <div class="total-box">
       <div><div class="total-lbl">含稅總價</div></div>
-      <div class="total-amt">${fmtP(totalPrice)}</div>
+      <div class="total-amt">${fmtP(vm.pricing.totalPrice)}</div>
     </div>
-    <div class="pay-grid">
-      <div class="pay-cell"><div class="pay-lbl">訂金 50%</div><div class="pay-val">${fmtP(deposit)}</div></div>
-      <div class="pay-cell"><div class="pay-lbl">尾款</div><div class="pay-val">${fmtP(balance)}</div></div>
-      <div class="pay-cell"><div class="pay-lbl">含稅總價</div><div class="pay-val" style="color:#c9a227">${fmtP(totalPrice)}</div></div>
-    </div>
+
+    <!-- 付款方式分項 -->
+    <table style="margin-top:4px">
+      <tr><th class="tdl" style="text-align:center;width:90px">項目</th><th class="tdl" style="text-align:right;width:100px">金額</th><th class="tdl" colspan="2" style="text-align:center">付款方式</th></tr>
+      ${payCheckboxRow('丈量費用', vm.pricing.measureFee, vm.payment.methods.measure, false)}
+      ${payCheckboxRow('訂金 50%', vm.pricing.deposit, vm.payment.methods.deposit, false)}
+      ${payCheckboxRow('尾款', vm.pricing.balance, vm.payment.methods.balance, true)}
+    </table>
   </div>
 
   <div class="terms">
-    <b>報價單注意事項：</b><br>
-    1.下單時乙方先預付50%訂金，收訂金日視為下單日。<br>
-    2.客製化產品下單後如要求改單，由下單日起算第3個日曆天下午1點後，改單所造成的損失由乙方承擔訂單總價之80%。<br>
-    3.有品質問題時自驗收後5個工作天內經乙方提出，逾期甲方不再負責。<br>
-    4.依客製化生產週期約在45~60個日曆天，如遇不可抗因素工期延長，甲方應提前20個工作天提出。<br>
-    5.驗收日後7個日曆天前乙方必須付清尾款(50%)，交貨日起算30個日曆天後須離開甲方倉庫，超出時間收取倉儲費(總貨款3%/日曆天)。<br>
-    6.出廠價格預設不含敲牆、拆舊回收、灌漿及選配零件等額外項目，如有需要以追加報價單核定為準。<br>
-    7.通訊軟體及電話均屬溝通過程，所有內容以簽署報價單最終版本為準。<br>
-    8.爭議時以臺灣新北市地方法院為第一審管轄法院。<br>
-    9.乙方如無鎖具要求，一律依甲方標準鎖體開孔。<br>
-    10.本交易為附條件買賣，貨款未付清前標的所有權屬甲方。<br>
-    11.報價適用於上述條件與產品，如有特殊安裝需求可委託甲方丈量確認。<br>
-    12.委請甲方丈量需先付訂金$3,000，可折抵訂單總價。<br>
-    13.保固：門體非人為因素3年不變形保固；五金3年；安裝保固完工6個月。<br>
-    14.保養請用抹布搭配清水，勿使用刺激性清潔產品。<br>
-    15.提前付款開立暫收款憑證，待報價單確認後一併開立發票。<br>
-    16.如有任何疑問，請即時聯絡業務人員。
+    ${termsHtml}
   </div>
 
   <div class="foot">
     <div>
-      <div style="font-size:12px;font-weight:900;color:#1a1a1a;margin-bottom:3px">${COMPANY.nameZh}</div>
-      <div style="font-size:9px;color:#555">列印日期：${fmtDate(null)}</div>
+      <div style="font-size:12px;font-weight:900;color:#1a1a1a;margin-bottom:3px">${vm.company.nameZh}</div>
+      <div style="font-size:9px;color:#555">列印日期：${fmtDateLong(null)}</div>
     </div>
     <div class="sign-area">
       <div class="sign-lbl">客戶確認回傳（發票章 / 簽章 / 全名 / 日期）</div>

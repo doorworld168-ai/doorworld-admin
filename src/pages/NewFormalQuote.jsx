@@ -27,6 +27,11 @@ const PAY_METHODS = [
   { value: 'measure_paid', label: '丈量費已付' }
 ];
 
+// 材質/工藝 hard-code 選項
+const MATERIAL_OPTIONS = [
+  '鋼板烤漆', '不銹鋼', '鋁合金', '鍍鋅鋼板', '實木貼皮', '陶瓷烤漆', '原木', '其他'
+];
+
 const ACC_CATS = ['lock', 'hinge', 'sill', 'closer', 'frame'];
 const ACC_LABELS = { lock: '門鎖', hinge: '鉸鍊', sill: '門檻', closer: '門弓器', frame: '門框' };
 
@@ -48,6 +53,8 @@ export default function NewFormalQuote() {
   const [products, setProducts] = useState([]);
   const [colorCards, setColorCards] = useState([]);
   const [panelStyles, setPanelStyles] = useState([]);
+  const [artFrames, setArtFrames] = useState([]);
+  const [lockStyles, setLockStyles] = useState([]);
   const [linkedCase, setLinkedCase] = useState(null); // 關聯的 case (含丈量資料)
   const [showProducts, setShowProducts] = useState(false);
   const [productSearch, setProductSearch] = useState('');
@@ -103,6 +110,8 @@ export default function NewFormalQuote() {
     sbFetch('accessories?select=*&is_active=eq.true&order=category.asc,sort_order.asc').then(d => setAccessories(d || [])).catch(() => {});
     sbFetch('color_cards?select=code,alt_code,name_en,name_zh,image_url&is_active=eq.true&order=sort_order.asc').then(d => setColorCards(d || [])).catch(() => {});
     sbFetch('panel_styles?select=*&is_active=eq.true&order=sort_order.asc').then(d => setPanelStyles(d || [])).catch(() => {});
+    sbFetch('art_frames?select=code,name_zh,name_en,image_url&is_active=eq.true&order=sort_order.asc').then(d => setArtFrames(d || [])).catch(() => {});
+    sbFetch('lock_styles?select=code,name_zh,name_en,brand,image_url&is_active=eq.true&order=sort_order.asc').then(d => setLockStyles(d || [])).catch(() => {});
     // Auto seq
     loadNextSeq(form.region, form.category, form.year, form.month).then(seq => setForm(f => ({ ...f, seq })));
   }, []);
@@ -485,7 +494,12 @@ export default function NewFormalQuote() {
           <div style={sectionStyle}>
             <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>palette</span>外觀設計</div>
             <div className="form-grid">
-              <div className="form-group full"><label>材質 / 工藝</label><input value={form.material} onChange={e => setForm(f => ({ ...f, material: e.target.value }))} placeholder="例：鋼板烤漆" /></div>
+              <div className="form-group full"><label>材質 / 工藝</label>
+                <select value={form.material} onChange={e => setForm(f => ({ ...f, material: e.target.value }))} style={inputStyle}>
+                  <option value="">未指定</option>
+                  {MATERIAL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
 
               {/* 前板樣式 — 圖片下拉 */}
               <div className="form-group">
@@ -518,7 +532,16 @@ export default function NewFormalQuote() {
               </div>
 
               {/* 藝術框 */}
-              <div className="form-group"><label>藝術框 (顯示編號)</label><input value={form.artFrame} onChange={e => setForm(f => ({ ...f, artFrame: e.target.value }))} placeholder="編號或無" /></div>
+              <div className="form-group"><label>藝術框</label>
+                <select value={form.artFrame} onChange={e => setForm(f => ({ ...f, artFrame: e.target.value }))} style={inputStyle}>
+                  <option value="">無</option>
+                  {artFrames.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name_zh || a.name_en || ''}</option>)}
+                </select>
+                {form.artFrame && artFrames.find(a => a.code === form.artFrame)?.image_url && (
+                  <img src={artFrames.find(a => a.code === form.artFrame).image_url} alt={form.artFrame} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4, marginTop: 6, border: '1px solid var(--border)' }} />
+                )}
+                {artFrames.length === 0 && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>尚未建立藝術框 → <a href="/artframes" style={{ color: 'var(--gold)' }}>去新增</a></div>}
+              </div>
 
               {/* 色卡 — 圖片下拉 */}
               <div className="form-group">
@@ -537,7 +560,16 @@ export default function NewFormalQuote() {
               </div>
 
               {/* 鎖樣式 */}
-              <div className="form-group full"><label>門鎖樣式 / 編號</label><input value={form.lockStyle} onChange={e => setForm(f => ({ ...f, lockStyle: e.target.value }))} /></div>
+              <div className="form-group full"><label>門鎖樣式</label>
+                <select value={form.lockStyle} onChange={e => setForm(f => ({ ...f, lockStyle: e.target.value }))} style={inputStyle}>
+                  <option value="">未指定</option>
+                  {lockStyles.map(l => <option key={l.code} value={l.code}>{l.code}{l.brand ? ` (${l.brand})` : ''} — {l.name_zh || l.name_en || ''}</option>)}
+                </select>
+                {form.lockStyle && lockStyles.find(l => l.code === form.lockStyle)?.image_url && (
+                  <img src={lockStyles.find(l => l.code === form.lockStyle).image_url} alt={form.lockStyle} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4, marginTop: 6, border: '1px solid var(--border)' }} />
+                )}
+                {lockStyles.length === 0 && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>尚未建立鎖樣式 → <a href="/lockstyles" style={{ color: 'var(--gold)' }}>去新增</a></div>}
+              </div>
             </div>
           </div>
 

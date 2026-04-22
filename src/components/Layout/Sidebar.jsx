@@ -35,6 +35,8 @@ const NAV_ITEMS = [
   { path: '/accessories', label: '五金配件', icon: 'hardware' },
   { path: '/colors', label: '色卡管理', icon: 'palette' },
   { path: '/panelstyles', label: '門板樣式', icon: 'door_back' },
+  { path: '/artframes', label: '藝術框管理', icon: 'photo_frame' },
+  { path: '/lockstyles', label: '門鎖樣式', icon: 'lock' },
   { path: '/staff', label: '員工帳號', icon: 'shield_person', adminOnly: true },
   { path: '/aiprompt', label: 'AI 提示詞', icon: 'psychology' },
 ];
