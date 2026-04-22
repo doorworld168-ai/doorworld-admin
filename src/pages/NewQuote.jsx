@@ -116,13 +116,25 @@ export default function NewQuote() {
   function calcAddon() {
     const sc = serviceCosts.find(s => s.door_type === form.door_type) || {};
     let total = 0;
-    if (form.demolition) total += sc.demolition || 0;
-    if (form.install_type === 'wet') total += sc.wet_install || 0;
-    if (form.install_type === 'dry') total += sc.dry_install || 0;
-    if (form.soundproof) total += sc.soundproof || 0;
-    if (form.smoke_seal) total += sc.smoke_seal || 0;
-    if (form.fireproof) total += sc.fireproof_cert || 0;
+    if (form.demolition) total += Number(sc.old_door_removal) || 0;
+    if (form.install_type === 'wet') total += (Number(sc.wet_grout) || 0) + (Number(sc.wet_paint) || 0);
+    if (form.install_type === 'dry') total += Number(sc.dry_frame) || 0;
+    if (form.soundproof) total += Number(sc.soundproof_basic) || 0;
+    if (form.smoke_seal) total += Number(sc.smoke_seal) || 0;
+    if (form.fireproof) total += Number(sc.fire_cert_60a) || 0;
     return total;
+  }
+
+  // 顯示在 checkbox 旁邊的單價
+  function priceFor(key) {
+    const sc = serviceCosts.find(s => s.door_type === form.door_type) || {};
+    if (key === 'demolition') return Number(sc.old_door_removal) || 0;
+    if (key === 'soundproof') return Number(sc.soundproof_basic) || 0;
+    if (key === 'smoke_seal') return Number(sc.smoke_seal) || 0;
+    if (key === 'fireproof') return Number(sc.fire_cert_60a) || 0;
+    if (key === 'wet') return (Number(sc.wet_grout) || 0) + (Number(sc.wet_paint) || 0);
+    if (key === 'dry') return Number(sc.dry_frame) || 0;
+    return 0;
   }
 
   function calcElevator() {
@@ -240,12 +252,18 @@ export default function NewQuote() {
           <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 }}>施工選項</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {[['demolition', '拆除舊門'], ['soundproof', '隔音'], ['smoke_seal', '遮煙'], ['fireproof', '防火證']].map(([k, l]) => (
-                <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />{l}
-                </label>
-              ))}
-              <div className="form-group" style={{ margin: 0 }}><label style={{ fontSize: 12 }}>安裝方式</label>
+              {[['demolition', '拆除舊門'], ['soundproof', '隔音'], ['smoke_seal', '遮煙'], ['fireproof', '防火證']].map(([k, l]) => {
+                const p = priceFor(k);
+                return (
+                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input type="checkbox" checked={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />{l}
+                    </span>
+                    <span style={{ fontSize: 12, color: p > 0 ? 'var(--gold)' : 'var(--text-muted)', fontWeight: p > 0 ? 700 : 400 }}>{p > 0 ? '+' + fmtPrice(p) : '—'}</span>
+                  </label>
+                );
+              })}
+              <div className="form-group" style={{ margin: 0 }}><label style={{ fontSize: 12 }}>安裝方式 <span style={{ color: 'var(--gold)', marginLeft: 6 }}>{priceFor(form.install_type) > 0 ? '+' + fmtPrice(priceFor(form.install_type)) : ''}</span></label>
                 <select value={form.install_type} onChange={e => setForm(f => ({ ...f, install_type: e.target.value }))} style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13, background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'var(--font-body)', width: '100%' }}>
                   <option value="wet">濕式安裝</option><option value="dry">乾式安裝</option><option value="none">不安裝</option>
                 </select>
