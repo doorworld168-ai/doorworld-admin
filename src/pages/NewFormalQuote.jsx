@@ -35,14 +35,24 @@ const MATERIAL_OPTIONS = [
 const ACC_CATS = ['lock', 'hinge', 'sill', 'closer', 'frame'];
 const ACC_LABELS = { lock: '門鎖', hinge: '鉸鍊', sill: '門檻', closer: '門弓器', frame: '門框' };
 
-// 內建特殊需求（無金額）— 站框留下、佔框移除
+// 內建特殊需求（無金額描述）
 const BUILTIN_REQS = [
-  { key: 'none', label: '無', priceless: true },
-  { key: 'demolish', label: '拆舊' },
+  { key: 'none', label: '無' },
   { key: 'recycle', label: '回收' },
-  { key: 'wet', label: '濕式施工' },
-  { key: 'dry', label: '乾式包框' },
   { key: 'frame', label: '站框' }
+];
+
+// service_costs 欄位 → 在報價單可勾選的施工費（依門型自動帶價）
+const SC_FEE_FIELDS = [
+  { key: 'old_door_removal', label: '拆舊門' },
+  { key: 'old_frame_remove', label: '拆舊框' },
+  { key: 'wet_grout', label: '濕式灌漿' },
+  { key: 'wet_paint', label: '油漆' },
+  { key: 'dry_frame', label: '乾式包框' },
+  { key: 'soundproof_basic', label: '隔音（基本）' },
+  { key: 'soundproof_50db', label: '隔音（50dB）' },
+  { key: 'fire_cert_60a', label: '防火認證 60A' },
+  { key: 'smoke_seal', label: '煙氣封條' }
 ];
 
 export default function NewFormalQuote() {
@@ -65,6 +75,7 @@ export default function NewFormalQuote() {
   const [panelStyles, setPanelStyles] = useState([]);
   const [artFrames, setArtFrames] = useState([]);
   const [serviceItems, setServiceItems] = useState([]); // 自訂附加項目
+  const [serviceCosts, setServiceCosts] = useState([]); // 依門型固定施工費
   const [linkedCase, setLinkedCase] = useState(null);
   const [showProducts, setShowProducts] = useState(false);
   const [productSearch, setProductSearch] = useState('');
@@ -91,8 +102,9 @@ export default function NewFormalQuote() {
   const [accState, setAccState] = useState({});
   const [calcResult, setCalcResult] = useState(null);
 
-  // 內建勾選 + 自訂項目勾選 (id -> bool)
-  const [reqs, setReqs] = useState({ none: false, demolish: false, recycle: false, wet: false, dry: false, frame: false });
+  // 內建勾選 + 依門型施工費勾選 + 自訂項目勾選
+  const [reqs, setReqs] = useState({ none: false, recycle: false, frame: false });
+  const [scReqs, setScReqs] = useState({}); // service_costs fee field -> bool
   const [customReqs, setCustomReqs] = useState({}); // service_items.id -> bool
 
   async function loadNextSeq(region, category, year, month) {
@@ -121,6 +133,7 @@ export default function NewFormalQuote() {
     sbFetch('panel_styles?select=*&is_active=eq.true&order=sort_order.asc').then(d => setPanelStyles(d || [])).catch(() => {});
     sbFetch('art_frames?select=code,name_zh,name_en,image_url&is_active=eq.true&order=sort_order.asc').then(d => setArtFrames(d || [])).catch(() => {});
     sbFetch('service_items?select=*&is_active=eq.true&show_on_quote=eq.true&order=sort_order.asc,name.asc').then(d => setServiceItems(d || [])).catch(() => {});
+    sbFetch('service_costs?select=*').then(d => setServiceCosts(d || [])).catch(() => {});
     loadNextSeq(form.region, form.category, form.year, form.month).then(seq => setForm(f => ({ ...f, seq })));
   }, []);
 
@@ -145,9 +158,18 @@ export default function NewFormalQuote() {
       }
     });
 
-    // 自訂特殊需求項目費用
+    // 依門型施工費
+    const sc = serviceCosts.find(s => s.door_type === form.doorType) || {};
     const reqLines = [];
     let reqTotal = 0;
+    SC_FEE_FIELDS.forEach(f => {
+      if (scReqs[f.key]) {
+        const p = Number(sc[f.key]) || 0;
+        reqTotal += p;
+        reqLines.push([f.label, p]);
+      }
+    });
+    // 自訂特殊需求項目費用
     serviceItems.forEach(it => {
       if (customReqs[it.id]) {
         reqTotal += (it.unit_price || 0);
@@ -162,7 +184,7 @@ export default function NewFormalQuote() {
     const balance = total - deposit;
 
     setCalcResult({ unitPrice, qty, discount, doorSubtotal, discounted, addonTotal, addonLines, installFee, total, deposit, balance, reqTotal, reqLines });
-  }, [form.unitPrice, form.qty, form.discount, form.installFee, form.addonItems, customReqs, serviceItems]);
+  }, [form.unitPrice, form.qty, form.discount, form.installFee, form.addonItems, customReqs, scReqs, serviceItems, serviceCosts, form.doorType]);
 
   async function selectQuote(id) {
     setForm(f => ({ ...f, quoteId: id }));
@@ -170,23 +192,43 @@ export default function NewFormalQuote() {
     const q = quotes.find(r => r.id === id);
     if (!q) return;
     setImportedQuote(q);
+
+    // 推導 fireType 優先序：smoke_seal > fireproof/door_type=fire > soundproof > 無
+    let fireType = 'none';
+    if (q.smoke_seal) fireType = 'f60a_smoke';
+    else if (q.fireproof || q.door_type === 'fire') fireType = 'f60a';
+    else if (q.soundproof) fireType = 'soundproof';
+
     setForm(f => ({
       ...f,
       contact: q.customer_name || '', phone: q.customer_phone || '', address: q.customer_addr || '',
       doorType: q.door_type === 'fire' ? 'single' : (q.door_type || 'single'),
-      fireType: q.door_type === 'fire' ? 'f60a' : 'none',
+      fireType,
       qty: q.quantity || 1,
       width: q.width_cm ? String(q.width_cm * 10) : '',
       height: q.height_cm ? String(q.height_cm * 10) : '',
-      unitPrice: q.unit_price ? String(q.unit_price) : ''
+      unitPrice: q.unit_price ? String(q.unit_price) : '',
+      floor: q.floor_count != null ? q.floor_count : f.floor,
+      hasElevator: q.elevator != null ? !!q.elevator : f.hasElevator,
     }));
-    // 自動推導特殊需求 (從估價單欄位)
-    setReqs(r => ({
-      ...r,
-      demolish: !!q.demolition,
-      wet: q.install_type === 'wet',
-      dry: q.install_type === 'dry'
-    }));
+
+    // 估價單勾的施工選項 → 報價單對應的 service_costs 勾選
+    setScReqs({
+      old_door_removal: !!q.demolition,
+      wet_grout: q.install_type === 'wet',
+      wet_paint: q.install_type === 'wet',
+      dry_frame: q.install_type === 'dry',
+      soundproof_basic: !!q.soundproof,
+      smoke_seal: !!q.smoke_seal,
+      fire_cert_60a: !!q.fireproof,
+    });
+
+    // 估價算出來但無對應 service_costs 欄位的金額（超寬/無電梯），帶到「附加施工費明細」文字框
+    const extraLines = [];
+    if (q.oversize_charge) extraLines.push(`超尺寸加價 ${q.oversize_charge}`);
+    if (q.elevator_charge) extraLines.push(`無電梯搬運 ${q.elevator_charge}`);
+    if (extraLines.length) setForm(f => ({ ...f, addonItems: extraLines.join('\n') }));
+
     if (q.product_code) {
       setProductSearch(q.product_code);
       searchProducts(q.product_code);
@@ -263,6 +305,10 @@ export default function NewFormalQuote() {
     const out = [];
     BUILTIN_REQS.forEach(r => {
       if (reqs[r.key]) out.push({ name: r.label, amount: 0, builtin: true });
+    });
+    const sc = serviceCosts.find(s => s.door_type === form.doorType) || {};
+    SC_FEE_FIELDS.forEach(f => {
+      if (scReqs[f.key]) out.push({ key: f.key, name: f.label, amount: Number(sc[f.key]) || 0 });
     });
     serviceItems.forEach(it => {
       if (customReqs[it.id]) out.push({ id: it.id, name: it.name, amount: it.unit_price || 0, unit: it.unit });
@@ -613,7 +659,8 @@ export default function NewFormalQuote() {
           {/* 8. 特殊需求 */}
           <div style={sectionStyle}>
             <div style={sectionTitle}><span className="material-symbols-outlined" style={{ fontSize: 14 }}>build</span>特殊需求</div>
-            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>內建項目（不計費）</label>
+
+            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>一般選項（不計費）</label>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
               {BUILTIN_REQS.map(r => (
                 <label key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
@@ -622,13 +669,41 @@ export default function NewFormalQuote() {
               ))}
             </div>
 
+            {/* 依門型施工費 */}
             <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
-              附加施工項目（計入總計）
-              {serviceItems.length === 0 && <a href="/service" style={{ color: 'var(--gold)', marginLeft: 8 }}>→ 去施工費用設定</a>}
+              施工附加（依當前門型 — {DOOR_TYPE_LABEL[form.doorType] || form.doorType}）
+              <a href="/service" style={{ color: 'var(--gold)', marginLeft: 8 }}>→ 改價</a>
+            </label>
+            {(() => {
+              const sc = serviceCosts.find(s => s.door_type === form.doorType);
+              if (!sc) return <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8, background: 'var(--surface-2)', borderRadius: 6, marginBottom: 14 }}>未找到對應門型的施工費用</div>;
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8, marginBottom: 14 }}>
+                  {SC_FEE_FIELDS.map(f => {
+                    const p = Number(sc[f.key]) || 0;
+                    if (p === 0) return null;
+                    const on = !!scReqs[f.key];
+                    return (
+                      <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: on ? 'rgba(201,162,39,.08)' : 'var(--surface-2)', border: `1px solid ${on ? 'var(--gold)' : 'var(--border)'}`, borderRadius: 6, fontSize: 13, cursor: 'pointer', justifyContent: 'space-between' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="checkbox" checked={on} onChange={e => setScReqs(prev => ({ ...prev, [f.key]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />
+                          {f.label}
+                        </span>
+                        <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: 12 }}>+{fmtPrice(p)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+              自訂附加項目
+              {serviceItems.length === 0 && <a href="/service" style={{ color: 'var(--gold)', marginLeft: 8 }}>→ 去施工費用新增</a>}
             </label>
             {serviceItems.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8, background: 'var(--surface-2)', borderRadius: 6 }}>
-                尚未建立任何「報價單顯示」的附加項目。請至「施工費用」頁新增項目並勾選「在報價單顯示」。
+                尚未建立任何「報價單顯示」的自訂附加項目
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
@@ -638,7 +713,7 @@ export default function NewFormalQuote() {
                       <input type="checkbox" checked={!!customReqs[it.id]} onChange={e => setCustomReqs(prev => ({ ...prev, [it.id]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />
                       {it.name}
                     </span>
-                    <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: 12 }}>{fmtPrice(it.unit_price)}</span>
+                    <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: 12 }}>+{fmtPrice(it.unit_price)}</span>
                   </label>
                 ))}
               </div>

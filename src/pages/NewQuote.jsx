@@ -18,6 +18,8 @@ export default function NewQuote() {
   const [showMembers, setShowMembers] = useState(false);
   const [showProducts, setShowProducts] = useState(false);
   const [serviceCosts, setServiceCosts] = useState([]);
+  const [serviceItems, setServiceItems] = useState([]);
+  const [customReqs, setCustomReqs] = useState({}); // service_items.id -> bool
   const [twDistricts, setTwDistricts] = useState({});
   const searchTimerM = useRef(null);
   const searchTimerP = useRef(null);
@@ -42,6 +44,7 @@ export default function NewQuote() {
 
   useEffect(() => {
     sbFetch('service_costs?select=*').then(d => setServiceCosts(d || [])).catch(() => {});
+    sbFetch('service_items?select=*&is_active=eq.true&show_on_quote=eq.true&order=sort_order.asc,name.asc').then(d => setServiceItems(d || [])).catch(() => {});
     fetch('https://raw.githubusercontent.com/donma/TaiwanAddressCityAreaRoadChineseEnglishJSON/master/CityCountyData.json')
       .then(r => r.json()).then(data => {
         const map = {};
@@ -122,6 +125,8 @@ export default function NewQuote() {
     if (form.soundproof) total += Number(sc.soundproof_basic) || 0;
     if (form.smoke_seal) total += Number(sc.smoke_seal) || 0;
     if (form.fireproof) total += Number(sc.fire_cert_60a) || 0;
+    // 自訂附加項目（與報價單共用 service_items）
+    serviceItems.forEach(it => { if (customReqs[it.id]) total += Number(it.unit_price) || 0; });
     return total;
   }
 
@@ -273,6 +278,24 @@ export default function NewQuote() {
               </label>
               {!form.elevator && inp('樓層數', 'floor_count', 'number')}
             </div>
+
+            {/* 自訂附加項目（共用 service_items） */}
+            {serviceItems.length > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>附加項目（共用施工費用設定）</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {serviceItems.map(it => (
+                    <label key={it.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, cursor: 'pointer' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="checkbox" checked={!!customReqs[it.id]} onChange={e => setCustomReqs(p => ({ ...p, [it.id]: e.target.checked }))} style={{ accentColor: 'var(--gold)' }} />
+                        {it.name}
+                      </span>
+                      <span style={{ color: 'var(--gold)', fontSize: 12, fontWeight: 700 }}>+{fmtPrice(it.unit_price)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ background: 'var(--surface-low)', borderRadius: 'var(--radius)', padding: 16 }}>
